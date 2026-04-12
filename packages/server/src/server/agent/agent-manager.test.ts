@@ -2601,6 +2601,74 @@ describe("AgentManager", () => {
     expect(attentionCalls).toHaveLength(0);
   });
 
+  test("external bridged sessions do not create unread finished attention on completion", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-external-bridge-attention-"));
+    const storagePath = join(workdir, "agents");
+    const storage = new AgentStorage(storagePath, logger);
+
+    class ExternalBridgeSession extends TestAgentSession {
+      override describePersistence() {
+        return {
+          provider: this.provider,
+          sessionId: this.id,
+          metadata: {
+            externalSessionSource: "codex_process",
+            tty: "/dev/pts/2",
+          },
+        };
+      }
+    }
+
+    class ExternalBridgeClient implements AgentClient {
+      readonly provider = "codex" as const;
+      readonly capabilities = TEST_CAPABILITIES;
+
+      async isAvailable(): Promise<boolean> {
+        return true;
+      }
+
+      async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+        return new ExternalBridgeSession(config);
+      }
+
+      async resumeSession(
+        _handle: AgentPersistenceHandle,
+        config?: Partial<AgentSessionConfig>,
+      ): Promise<AgentSession> {
+        return new ExternalBridgeSession({
+          provider: "codex",
+          cwd: config?.cwd ?? process.cwd(),
+        });
+      }
+    }
+
+    const attentionReasons: Array<"finished" | "error" | "permission"> = [];
+    const manager = new AgentManager({
+      clients: {
+        codex: new ExternalBridgeClient(),
+      },
+      registry: storage,
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000112",
+      onAgentAttention: ({ reason }) => {
+        attentionReasons.push(reason);
+      },
+    });
+
+    const agent = await manager.createAgent({
+      provider: "codex",
+      cwd: workdir,
+      title: "External bridge session",
+    });
+
+    await manager.runAgent(agent.id, "hello");
+
+    const completed = manager.getAgent(agent.id);
+    expect(completed?.lifecycle).toBe("idle");
+    expect(completed?.attention).toEqual({ requiresAttention: false });
+    expect(attentionReasons).toEqual([]);
+  });
+
   test("clearAgentAttention on errored agent stays cleared until a new error transition", async () => {
     const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-error-"));
     const storagePath = join(workdir, "agents");
