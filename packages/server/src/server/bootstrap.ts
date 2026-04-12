@@ -435,6 +435,7 @@ export async function createPaseoDaemon(
       logger,
       paseoHome: config.paseoHome,
       agentManager,
+      agentStorage,
       projectRegistry,
       workspaceRegistry,
     });
@@ -655,6 +656,8 @@ export async function createPaseoDaemon(
               loopService,
               scheduleService,
               checkoutDiffManager,
+              tmuxCodexBridge,
+              codexProcessBridge,
               workspaceGitService,
             );
 

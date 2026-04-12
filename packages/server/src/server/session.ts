@@ -61,6 +61,8 @@ import {
 } from "./voice/voice-turn-controller.js";
 import {
   buildConfigOverrides,
+  buildExternalBridgeSessionConfig,
+  buildSessionConfig,
   extractTimestamps,
   toAgentPersistenceHandle,
 } from "./persistence-hooks.js";
@@ -71,6 +73,10 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { WorkspaceGitRuntimeSnapshot, WorkspaceGitService } from "./workspace-git-service.js";
+import type { TmuxCodexBridgeService } from "./tmux-codex-bridge-service.js";
+import type { CodexProcessBridgeService } from "./codex-process-bridge-service.js";
+import { isTmuxCodexHandle } from "./tmux-codex-bridge.js";
+import { isCodexProcessHandle } from "./codex-process-bridge.js";
 
 import { buildProviderRegistry } from "./agent/provider-registry.js";
 import type {
@@ -440,6 +446,8 @@ export type SessionOptions = {
   agentStorage: AgentStorage;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
+  tmuxCodexBridge?: TmuxCodexBridgeService | null;
+  codexProcessBridge?: CodexProcessBridgeService | null;
   chatService: FileBackedChatService;
   scheduleService: ScheduleService;
   loopService: LoopService;
@@ -589,6 +597,8 @@ export class Session {
   private readonly agentStorage: AgentStorage;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
+  private readonly tmuxCodexBridge: TmuxCodexBridgeService | null;
+  private readonly codexProcessBridge: CodexProcessBridgeService | null;
   private readonly chatService: FileBackedChatService;
   private readonly scheduleService: ScheduleService;
   private readonly loopService: LoopService;
@@ -654,6 +664,8 @@ export class Session {
       agentStorage,
       projectRegistry,
       workspaceRegistry,
+      tmuxCodexBridge,
+      codexProcessBridge,
       chatService,
       scheduleService,
       loopService,
@@ -684,6 +696,8 @@ export class Session {
     this.agentStorage = agentStorage;
     this.projectRegistry = projectRegistry;
     this.workspaceRegistry = workspaceRegistry;
+    this.tmuxCodexBridge = tmuxCodexBridge ?? null;
+    this.codexProcessBridge = codexProcessBridge ?? null;
     this.chatService = chatService;
     this.scheduleService = scheduleService;
     this.loopService = loopService;
@@ -1077,6 +1091,159 @@ export class Session {
 
   private buildStoredAgentPayload(record: StoredAgentRecord): AgentSnapshotPayload {
     return buildStoredAgentPayload(record, this.providerRegistry, this.sessionLogger);
+  }
+
+  private shouldRelaunchExternalCodexSession(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes("tmux codex session not found") ||
+      message.includes("codex process session not found")
+    );
+  }
+
+  private buildExternalResumeConfig(input: {
+    handle: AgentPersistenceHandle;
+    overrides?: Partial<AgentSessionConfig>;
+  }): AgentSessionConfig {
+    const { handle, overrides } = input;
+    const metadata = handle.metadata ?? {};
+    const cwd =
+      overrides?.cwd ??
+      (typeof metadata.cwd === "string" && metadata.cwd.trim().length > 0
+        ? metadata.cwd
+        : process.cwd());
+    const title =
+      overrides?.title ??
+      (typeof metadata.title === "string" && metadata.title.trim().length > 0
+        ? metadata.title
+        : null);
+
+    return {
+      provider: handle.provider,
+      cwd,
+      modeId: overrides?.modeId,
+      model: overrides?.model,
+      thinkingOptionId: overrides?.thinkingOptionId,
+      featureValues: overrides?.featureValues,
+      title,
+      extra: overrides?.extra,
+      systemPrompt: overrides?.systemPrompt,
+      mcpServers: overrides?.mcpServers,
+    };
+  }
+
+  private async resumeAgentThroughExternalBridge(input: {
+    handle: AgentPersistenceHandle;
+    agentId: string;
+    config: AgentSessionConfig;
+    labels?: Record<string, string>;
+    createdAt?: Date;
+    updatedAt?: Date;
+    lastUserMessageAt?: Date | null;
+  }): Promise<ManagedAgent | null> {
+    if (isTmuxCodexHandle(input.handle)) {
+      if (!this.tmuxCodexBridge) {
+        throw new Error("tmux codex bridge is not available");
+      }
+      try {
+        return await this.tmuxCodexBridge.resumeFromPersistence(input);
+      } catch (error) {
+        if (!this.shouldRelaunchExternalCodexSession(error)) {
+          throw error;
+        }
+        return await this.tmuxCodexBridge.relaunchFromPersistence(input);
+      }
+    }
+
+    if (isCodexProcessHandle(input.handle)) {
+      if (!this.codexProcessBridge) {
+        throw new Error("codex process bridge is not available");
+      }
+      try {
+        return await this.codexProcessBridge.resumeFromPersistence(input);
+      } catch (error) {
+        if (!this.tmuxCodexBridge || !this.shouldRelaunchExternalCodexSession(error)) {
+          throw error;
+        }
+        return await this.tmuxCodexBridge.relaunchFromPersistence(input);
+      }
+    }
+
+    return null;
+  }
+
+  private async ensureAgentLoaded(agentId: string): Promise<ManagedAgent> {
+    const existing = this.agentManager.getAgent(agentId);
+    if (existing) {
+      return existing;
+    }
+
+    const inflight = pendingAgentInitializations.get(agentId);
+    if (inflight) {
+      return inflight;
+    }
+
+    const initPromise = (async () => {
+      const record = await this.agentStorage.get(agentId);
+      if (!record) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      const handle = toAgentPersistenceHandle(this.sessionLogger, record.persistence);
+      let snapshot: ManagedAgent;
+      const bridgedSnapshot = handle
+        ? await this.resumeAgentThroughExternalBridge({
+            handle,
+            agentId,
+            config: buildExternalBridgeSessionConfig(record),
+            labels: record.labels,
+            ...extractTimestamps(record),
+          })
+        : null;
+      if (bridgedSnapshot) {
+        snapshot = bridgedSnapshot;
+        this.sessionLogger.info(
+          {
+            agentId,
+            provider: record.provider,
+            externalSessionSource: handle?.metadata?.externalSessionSource,
+          },
+          "External Codex session resumed from bridge persistence",
+        );
+      } else if (handle) {
+        snapshot = await this.agentManager.resumeAgentFromPersistence(
+          handle,
+          buildConfigOverrides(record),
+          agentId,
+          extractTimestamps(record),
+        );
+        this.sessionLogger.info(
+          { agentId, provider: record.provider },
+          "Agent resumed from persistence",
+        );
+      } else {
+        const config = buildSessionConfig(record);
+        snapshot = await this.agentManager.createAgent(config, agentId, { labels: record.labels });
+        this.sessionLogger.info(
+          { agentId, provider: record.provider },
+          "Agent created from stored config",
+        );
+      }
+
+      await this.agentManager.hydrateTimelineFromProvider(agentId);
+      return this.agentManager.getAgent(agentId) ?? snapshot;
+    })();
+
+    pendingAgentInitializations.set(agentId, initPromise);
+
+    try {
+      return await initPromise;
+    } finally {
+      const current = pendingAgentInitializations.get(agentId);
+      if (current === initPromise) {
+        pendingAgentInitializations.delete(agentId);
+      }
+    }
   }
 
   // TODO: Remove once all app store clients are on >=0.1.45.
@@ -2887,7 +3054,12 @@ export class Session {
     );
     try {
       await this.unarchiveAgentByHandle(handle);
-      const snapshot = await this.agentManager.resumeAgentFromPersistence(handle, overrides);
+      const snapshot =
+        (await this.resumeAgentThroughExternalBridge({
+          handle,
+          agentId: handle.sessionId,
+          config: this.buildExternalResumeConfig({ handle, overrides }),
+        })) ?? (await this.agentManager.resumeAgentFromPersistence(handle, overrides));
       await unarchiveAgentState(this.agentStorage, this.agentManager, snapshot.id);
       await this.agentManager.hydrateTimelineFromProvider(snapshot.id);
       await this.forwardAgentUpdate(snapshot);
@@ -2934,7 +3106,28 @@ export class Session {
       const existing = this.agentManager.getAgent(agentId);
       if (existing) {
         await this.interruptAgentIfRunning(agentId);
-        snapshot = await this.agentManager.reloadAgentSession(agentId);
+        const bridgedHandle = existing.persistence ?? null;
+        if (bridgedHandle && (isTmuxCodexHandle(bridgedHandle) || isCodexProcessHandle(bridgedHandle))) {
+          await this.agentManager.closeAgent(agentId);
+          const bridgedSnapshot = await this.resumeAgentThroughExternalBridge({
+            handle: bridgedHandle,
+            agentId,
+            config: {
+              ...existing.config,
+              provider: bridgedHandle.provider,
+            },
+            labels: existing.labels,
+            createdAt: existing.createdAt,
+            updatedAt: existing.updatedAt,
+            lastUserMessageAt: existing.lastUserMessageAt,
+          });
+          if (!bridgedSnapshot) {
+            throw new Error(`Unable to refresh external agent ${agentId} through bridge`);
+          }
+          snapshot = bridgedSnapshot;
+        } else {
+          snapshot = await this.agentManager.reloadAgentSession(agentId);
+        }
       } else {
         const record = await this.agentStorage.get(agentId);
         if (!record) {
@@ -2948,12 +3141,20 @@ export class Session {
         if (!handle) {
           throw new Error(`Agent ${agentId} cannot be refreshed because it lacks persistence`);
         }
-        snapshot = await this.agentManager.resumeAgentFromPersistence(
-          handle,
-          buildConfigOverrides(record),
-          agentId,
-          extractTimestamps(record),
-        );
+        snapshot =
+          (await this.resumeAgentThroughExternalBridge({
+            handle,
+            agentId,
+            config: buildExternalBridgeSessionConfig(record),
+            labels: record.labels,
+            ...extractTimestamps(record),
+          })) ??
+          (await this.agentManager.resumeAgentFromPersistence(
+            handle,
+            buildConfigOverrides(record),
+            agentId,
+            extractTimestamps(record),
+          ));
       }
       await this.agentManager.hydrateTimelineFromProvider(agentId);
       await this.forwardAgentUpdate(snapshot);
