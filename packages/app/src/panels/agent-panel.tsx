@@ -9,6 +9,7 @@ import invariant from "tiny-invariant";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/components/agent-stream-view";
 import { AgentInputArea } from "@/components/agent-input-area";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
+import { ExternalSessionCallout } from "@/components/external-session-callout";
 import { FileDropZone } from "@/components/file-drop-zone";
 import type { ImageAttachment } from "@/components/message-input";
 import { getProviderIcon } from "@/components/provider-icons";
@@ -36,6 +37,7 @@ import {
 } from "@/runtime/host-runtime";
 import { getInitDeferred, getInitKey } from "@/utils/agent-initialization";
 import { derivePendingPermissionKey, normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import { describeExternalSessionRecovery } from "@/utils/external-session";
 import { mergePendingCreateImages } from "@/utils/pending-create-images";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
@@ -255,7 +257,7 @@ function AgentPanelBody({
 
   const agentState = useSessionStore(
     useShallow((state) => {
-      const agent = agentId ? (state.sessions[serverId]?.agents?.get(agentId) ?? null) : null;
+      const agent = agentId ? state.sessions[serverId]?.agents?.get(agentId) ?? null : null;
       return {
         serverId: agent?.serverId ?? null,
         id: agent?.id ?? null,
@@ -266,6 +268,9 @@ function AgentPanelBody({
         attentionReason: agent?.attentionReason ?? null,
       };
     }),
+  );
+  const agentRecord = useSessionStore((state) =>
+    agentId ? state.sessions[serverId]?.agents?.get(agentId) ?? null : null,
   );
   const projectPlacement = useStoreWithEqualityFn(
     useSessionStore,
@@ -308,6 +313,12 @@ function AgentPanelBody({
   const [missingAgentState, setMissingAgentState] = useState<AgentScreenMissingState>({
     kind: "idle",
   });
+  const externalRecoveryDescriptor = useMemo(
+    () => (agentRecord ? describeExternalSessionRecovery(agentRecord) : null),
+    [agentRecord],
+  );
+  const shouldRecoverClosedExternalSession =
+    externalRecoveryDescriptor?.canRecoverWhenClosed === true;
 
   const pendingCreate = useMemo(() => {
     if (!agentId) {
@@ -410,8 +421,18 @@ function AgentPanelBody({
     if (!isPaneFocused || !agentId || !isConnected || !hasSession) {
       return;
     }
+    if (shouldRecoverClosedExternalSession) {
+      return;
+    }
     ensureInitializedWithSyncErrorHandling("focus");
-  }, [agentId, ensureInitializedWithSyncErrorHandling, hasSession, isConnected, isPaneFocused]);
+  }, [
+    agentId,
+    ensureInitializedWithSyncErrorHandling,
+    hasSession,
+    isConnected,
+    isPaneFocused,
+    shouldRecoverClosedExternalSession,
+  ]);
 
   const isArchivingCurrentAgent = Boolean(agentId && isArchivingAgent({ serverId, agentId }));
 
@@ -484,19 +505,16 @@ function AgentPanelBody({
     isPendingCreateForPanel && (!authoritativeStatus || isAuthoritativeBootstrapping);
   const canFinalizePendingCreate = Boolean(authoritativeStatus) && !isAuthoritativeBootstrapping;
 
-  const agent = useMemo<AgentScreenAgent | null>(
-    () =>
-      agentState.serverId && agentState.id && agentState.status && agentState.cwd
-        ? {
-            serverId: agentState.serverId,
-            id: agentState.id,
-            status: agentState.status,
-            cwd: agentState.cwd,
-            projectPlacement,
-          }
-        : null,
-    [agentState.serverId, agentState.id, agentState.status, agentState.cwd, projectPlacement],
-  );
+  const agent: AgentScreenAgent | null =
+    agentState.serverId && agentState.id && agentState.status && agentState.cwd
+      ? {
+          serverId: agentState.serverId,
+          id: agentState.id,
+          status: agentState.status,
+          cwd: agentState.cwd,
+          projectPlacement,
+        }
+      : null;
 
   const placeholderAgent: AgentScreenAgent | null = useMemo(() => {
     if (!shouldUseOptimisticStream || !agentId) {
@@ -521,6 +539,7 @@ function AgentPanelBody({
       isArchivingCurrentAgent,
       isHistorySyncing,
       needsAuthoritativeSync,
+      deferAuthoritativeSync: shouldRecoverClosedExternalSession,
       shouldUseOptimisticStream,
       hasHydratedHistoryBefore,
     },
@@ -600,6 +619,9 @@ function AgentPanelBody({
     if (!shouldSyncOnEntry) {
       return;
     }
+    if (shouldRecoverClosedExternalSession) {
+      return;
+    }
 
     ensureInitializedWithSyncErrorHandling("entry");
   }, [
@@ -608,6 +630,7 @@ function AgentPanelBody({
     hasSession,
     isConnected,
     needsAuthoritativeSync,
+    shouldRecoverClosedExternalSession,
   ]);
 
   useEffect(() => {
@@ -707,6 +730,7 @@ function AgentPanelBody({
     shouldUseOptimisticStream,
   ]);
 
+
   if (viewState.tag === "not_found") {
     return (
       <View style={styles.container} testID="agent-not-found">
@@ -759,6 +783,16 @@ function AgentPanelBody({
           </View>
 
           {agentId && !isArchivingCurrentAgent && !agentState.archivedAt ? (
+            shouldRecoverClosedExternalSession && agentRecord ? (
+              <ExternalSessionCallout
+                serverId={serverId}
+                agent={agentRecord}
+                autoRecover
+                onRecovered={async () => {
+                  await ensureAgentIsInitialized(agentId);
+                }}
+              />
+            ) : (
             <AgentInputArea
               agentId={agentId}
               serverId={serverId}
@@ -787,6 +821,7 @@ function AgentPanelBody({
                 streamViewRef.current?.scrollToBottom("message-sent");
               }}
             />
+            )
           ) : agentId && agentState.archivedAt ? (
             <ArchivedAgentCallout serverId={serverId} agentId={agentId} />
           ) : null}
