@@ -116,4 +116,50 @@ describe("CodexProcessBridgeService", () => {
 
     expect(closeAgent).toHaveBeenCalledWith(adoptedAgentId);
   });
+
+  it("resumes a persisted codex process session under the supplied agent id", async () => {
+    const { service, adoptSession } = createService();
+
+    await service.resumeFromPersistence({
+      handle: {
+        provider: "codex",
+        sessionId: "019d6145-173e-74a0-88bc-e34f12bd3941",
+        metadata: {
+          externalSessionSource: "codex_process",
+          tty: "/dev/pts/14",
+          cwd: "/workspace/repo-b",
+          sessionId: "019d6145-173e-74a0-88bc-e34f12bd3941",
+        },
+      },
+      agentId: "agent-external-resumed",
+      config: {
+        provider: "codex",
+        cwd: "/workspace/repo-b",
+        modeId: "auto",
+        title: "repo-b [pts/14]",
+      },
+      labels: {
+        source: "external",
+        bridge: "codex_process",
+        tty: "pts/14",
+      },
+    });
+
+    expect(adoptSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        provider: "codex",
+        cwd: "/workspace/repo-b",
+        title: "repo-b [pts/14]",
+      }),
+      "agent-external-resumed",
+      expect.objectContaining({
+        labels: {
+          source: "external",
+          bridge: "codex_process",
+          tty: "pts/14",
+        },
+      }),
+    );
+  });
 });
