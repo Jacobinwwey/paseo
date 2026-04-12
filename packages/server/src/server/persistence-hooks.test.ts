@@ -5,6 +5,7 @@ import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import {
   attachAgentStoragePersistence,
   buildConfigOverrides,
+  buildExternalBridgeSessionConfig,
   buildSessionConfig,
 } from "./persistence-hooks.js";
 import type {
@@ -226,5 +227,23 @@ describe("persistence hooks", () => {
       { agentId: "agent-missing-provider", provider: "zai" },
       "Skipping persisted agent with unknown provider 'zai'",
     );
+  });
+
+  test("buildExternalBridgeSessionConfig prefers the persisted canonical title", () => {
+    const record = createRecord({
+      provider: "codex",
+      title: "Renamed title",
+      config: {
+        title: "Creation title",
+        modeId: "default",
+      },
+    });
+
+    expect(buildExternalBridgeSessionConfig(record)).toMatchObject({
+      provider: "codex",
+      cwd: "/tmp/project",
+      modeId: "plan",
+      title: "Renamed title",
+    });
   });
 });
