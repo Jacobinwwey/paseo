@@ -369,6 +369,41 @@ describe("AgentManager", () => {
     expect(client.lastConfig?.mcpServers).toEqual(snapshot.config.mcpServers);
   });
 
+  test("adoptSession registers a provided session under the supplied agent id", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-adopt-"));
+    const storagePath = join(workdir, "agents");
+    const storage = new AgentStorage(storagePath, logger);
+    const manager = new AgentManager({
+      clients: {
+        codex: new TestAgentClient(),
+      },
+      registry: storage,
+      logger,
+      idFactory: () => "00000000-0000-4000-8000-000000000104",
+    });
+
+    const session = new TestAgentSession({
+      provider: "codex",
+      cwd: workdir,
+    });
+
+    const snapshot = await manager.adoptSession(
+      session,
+      {
+        provider: "codex",
+        cwd: workdir,
+      },
+      "00000000-0000-4000-8000-000000000105",
+      {
+        labels: { source: "external", bridge: "codex_process" },
+      },
+    );
+
+    expect(snapshot.id).toBe("00000000-0000-4000-8000-000000000105");
+    expect(snapshot.labels).toEqual({ source: "external", bridge: "codex_process" });
+    expect(manager.getAgent(snapshot.id)?.config.model).toBe("gpt-5.4");
+  });
+
   test("createAgent preserves a user-provided paseo MCP config", async () => {
     const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
     const storagePath = join(workdir, "agents");
