@@ -70,6 +70,14 @@ export function buildSessionConfig(record: StoredAgentRecord): AgentSessionConfi
   };
 }
 
+export function buildExternalBridgeSessionConfig(record: StoredAgentRecord): AgentSessionConfig {
+  const config = buildSessionConfig(record);
+  return {
+    ...config,
+    title: record.title ?? config.title,
+  };
+}
+
 export function extractTimestamps(record: StoredAgentRecord): {
   createdAt: Date;
   updatedAt: Date;

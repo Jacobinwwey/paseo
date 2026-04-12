@@ -411,6 +411,7 @@ export async function createPaseoDaemon(
       logger,
       paseoHome: config.paseoHome,
       agentManager,
+      agentStorage,
       projectRegistry,
       workspaceRegistry,
     });
@@ -630,6 +631,8 @@ export async function createPaseoDaemon(
               loopService,
               scheduleService,
               checkoutDiffManager,
+              tmuxCodexBridge,
+              codexProcessBridge,
             );
 
             if (typeof process.send === "function" && process.env.PASEO_SUPERVISED === "1") {

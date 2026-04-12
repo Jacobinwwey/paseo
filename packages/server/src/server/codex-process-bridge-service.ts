@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 
+import type { AgentPersistenceHandle, AgentSessionConfig } from "./agent/agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent/agent-manager.js";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
 import {
@@ -18,10 +19,12 @@ import {
 import {
   CodexProcessBridge,
   createCodexProcessRunner,
+  isCodexProcessHandle,
   type CodexProcessDescriptor,
   type CodexProcessRunner,
 } from "./codex-process-bridge.js";
 import { createTmuxCodexSession, type TmuxCodexSession } from "./tmux-codex-session.js";
+import { loadCodexPersistedTimeline } from "./agent/providers/codex-rollout-timeline.js";
 
 type TrackedCodexProcessSession = {
   agentId: string;
@@ -107,16 +110,42 @@ export class CodexProcessBridgeService {
     }
   }
 
+  async resumeFromPersistence(input: {
+    handle: AgentPersistenceHandle;
+    agentId: string;
+    config: AgentSessionConfig;
+    labels?: Record<string, string>;
+    createdAt?: Date;
+    updatedAt?: Date;
+    lastUserMessageAt?: Date | null;
+  }): Promise<ManagedAgent> {
+    if (!isCodexProcessHandle(input.handle)) {
+      throw new Error("Not a codex process bridge handle");
+    }
+    const descriptors = await this.bridge.discover();
+    const tty = typeof input.handle.metadata?.tty === "string" ? input.handle.metadata.tty : null;
+    const descriptor = descriptors.find(
+      (entry) => entry.agentId === input.agentId || (tty ? entry.tty === tty : false),
+    );
+    if (!descriptor) {
+      throw new Error(`codex process session not found for ${tty ?? input.agentId}`);
+    }
+    return this.adoptDescriptor(descriptor, {
+      forcedAgentId: input.agentId,
+      labels: input.labels,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+      lastUserMessageAt: input.lastUserMessageAt,
+    });
+  }
+
   private async doSync(): Promise<void> {
     const descriptors = await this.bridge.discover();
     const seenAgentIds = new Set<string>();
 
     for (const descriptor of descriptors) {
       seenAgentIds.add(descriptor.agentId);
-      if (
-        this.trackedByAgentId.has(descriptor.agentId) ||
-        this.agentManager.getAgent(descriptor.agentId)
-      ) {
+      if (this.trackedByAgentId.has(descriptor.agentId) || this.agentManager.getAgent(descriptor.agentId)) {
         const tracked = this.trackedByAgentId.get(descriptor.agentId);
         if (tracked) {
           tracked.missingScans = 0;
@@ -153,8 +182,15 @@ export class CodexProcessBridgeService {
 
   private async adoptDescriptor(
     descriptor: CodexProcessDescriptor,
-    options?: { labels?: Record<string, string> },
+    options?: {
+      forcedAgentId?: string;
+      labels?: Record<string, string>;
+      createdAt?: Date;
+      updatedAt?: Date;
+      lastUserMessageAt?: Date | null;
+    },
   ): Promise<ManagedAgent> {
+    const agentId = options?.forcedAgentId ?? descriptor.agentId;
     await this.ensureWorkspaceProjection(descriptor);
 
     const session = createTmuxCodexSession({
@@ -170,22 +206,24 @@ export class CodexProcessBridgeService {
         leaderPid: descriptor.leaderPid,
         sessionId: descriptor.sessionId,
       },
+      loadTimeline: descriptor.sessionId
+        ? async () =>
+            loadCodexPersistedTimeline(descriptor.sessionId!, undefined, this.logger)
+        : undefined,
       capturePane: async () => this.bridge.capture(descriptor.logPath),
       sendKeys: async (_target, keys) => this.sendKeys(descriptor.tty, keys),
       isProcessAlive: async () => this.bridge.isAlive(descriptor.leaderPid),
     });
 
-    const managed = await this.agentManager.adoptSession(
-      session,
-      descriptor.config,
-      descriptor.agentId,
-      {
-        labels: options?.labels,
-      },
-    );
+    const managed = await this.agentManager.adoptSession(session, descriptor.config, agentId, {
+      labels: options?.labels,
+      createdAt: options?.createdAt,
+      updatedAt: options?.updatedAt,
+      lastUserMessageAt: options?.lastUserMessageAt,
+    });
 
-    this.trackedByAgentId.set(descriptor.agentId, {
-      agentId: descriptor.agentId,
+    this.trackedByAgentId.set(agentId, {
+      agentId,
       leaderPid: descriptor.leaderPid,
       session,
       missingScans: 0,
@@ -234,7 +272,10 @@ export class CodexProcessBridgeService {
 
   private async sendKeys(tty: string, keys: string[]): Promise<void> {
     for (const key of keys) {
-      const data = key === "Enter" ? "\n" : key === "C-c" ? "\u0003" : key;
+      const data =
+        key === "Enter" ? "\n" :
+        key === "C-c" ? "\u0003" :
+        key;
       await this.bridge.sendInput(tty, data);
     }
   }
