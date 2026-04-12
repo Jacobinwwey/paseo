@@ -2454,6 +2454,11 @@ export class AgentManager {
     }
   }
 
+  private isExternalBridgedSession(agent: ManagedAgent): boolean {
+    const source = agent.persistence?.metadata?.externalSessionSource;
+    return typeof source === "string" && source.trim().length > 0;
+  }
+
   private checkAndSetAttention(agent: ManagedAgent): void {
     const previousStatus = this.previousStatuses.get(agent.id);
     const currentStatus = agent.lifecycle;
@@ -2473,6 +2478,9 @@ export class AgentManager {
 
     // Check if agent transitioned from running to idle (finished)
     if (previousStatus === "running" && currentStatus === "idle") {
+      if (this.isExternalBridgedSession(agent)) {
+        return;
+      }
       agent.attention = {
         requiresAttention: true,
         attentionReason: "finished",
