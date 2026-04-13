@@ -67,6 +67,7 @@ import {
 import { MAX_CONTENT_WIDTH } from "@/constants/layout";
 import { normalizeInlinePathTarget } from "@/utils/inline-path";
 import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
+import type { StreamFocusRequest } from "@/utils/stream-focus-request";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import {
   getWorkingIndicatorDotStrength,
@@ -89,8 +90,10 @@ export interface AgentStreamViewProps {
   streamItems: StreamItem[];
   pendingPermissions: Map<string, PendingPermission>;
   routeBottomAnchorRequest?: BottomAnchorRouteRequest | null;
+  focusRequest?: StreamFocusRequest | null;
   isAuthoritativeHistoryReady?: boolean;
   onOpenWorkspaceFile?: (input: { filePath: string }) => void;
+  onFocusRequestHandled?: (requestKey: string) => void;
 }
 
 const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
@@ -102,8 +105,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       streamItems,
       pendingPermissions,
       routeBottomAnchorRequest = null,
+      focusRequest = null,
       isAuthoritativeHistoryReady = true,
       onOpenWorkspaceFile,
+      onFocusRequestHandled,
     },
     ref,
   ) {
@@ -459,7 +464,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           });
 
         return (
-          <View style={[stylesheet.streamItemWrapper, { marginBottom: gapBelow }]}>
+          <View
+            style={[stylesheet.streamItemWrapper, { marginBottom: gapBelow }]}
+            testID={`stream-item-${item.id}`}
+          >
             {content}
             {isEndOfAssistantTurn ? <TurnCopyButton getContent={getTurnContent} /> : null}
           </View>
@@ -609,7 +617,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               listEmptyComponent,
               viewportRef,
               routeBottomAnchorRequest,
+              focusRequest,
               isAuthoritativeHistoryReady,
+              onFocusRequestHandled,
               onNearBottomChange: setIsNearBottom,
               scrollEnabled: streamScrollEnabled,
               listStyle: stylesheet.list,
