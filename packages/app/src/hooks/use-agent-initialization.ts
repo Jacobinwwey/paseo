@@ -10,13 +10,21 @@ import {
   rejectInitDeferred,
 } from "@/utils/agent-initialization";
 import { deriveInitialTimelineRequest } from "@/contexts/session-timeline-bootstrap-policy";
+import { useAppSettings } from "@/hooks/use-settings";
 
 const INIT_TIMEOUT_MS = 5 * 60_000;
 const NATIVE_INITIAL_TIMELINE_LIMIT = 200;
 const UNBOUNDED_TIMELINE_LIMIT = 0;
 
-function resolveInitialTimelineLimit(): number {
-  return Platform.OS === "web" ? UNBOUNDED_TIMELINE_LIMIT : NATIVE_INITIAL_TIMELINE_LIMIT;
+function resolveInitialTimelineLimit(input?: {
+  platform?: string;
+  nativeInitialTimelineLimit?: number;
+}): number {
+  const platform = input?.platform ?? Platform.OS;
+  if (platform === "web") {
+    return UNBOUNDED_TIMELINE_LIMIT;
+  }
+  return input?.nativeInitialTimelineLimit ?? NATIVE_INITIAL_TIMELINE_LIMIT;
 }
 
 export const __private__ = {
@@ -31,6 +39,7 @@ export function useAgentInitialization({
   serverId: string;
   client: DaemonClient | null;
 }) {
+  const { settings } = useAppSettings();
   const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
   const setAgentInitializing = useCallback(
     (agentId: string, initializing: boolean) => {
@@ -56,7 +65,9 @@ export function useAgentInitialization({
 
       const session = useSessionStore.getState().sessions[serverId];
       const cursor = session?.agentTimelineCursor.get(agentId);
-      const initialTimelineLimit = resolveInitialTimelineLimit();
+      const initialTimelineLimit = resolveInitialTimelineLimit({
+        nativeInitialTimelineLimit: settings.nativeInitialTimelineLimit,
+      });
       const hasAuthoritativeHistory =
         session?.agentAuthoritativeHistoryApplied.get(agentId) === true;
       const timelineRequest = deriveInitialTimelineRequest({
@@ -103,7 +114,9 @@ export function useAgentInitialization({
 
       try {
         await client.refreshAgent(agentId);
-        const initialTimelineLimit = resolveInitialTimelineLimit();
+        const initialTimelineLimit = resolveInitialTimelineLimit({
+          nativeInitialTimelineLimit: settings.nativeInitialTimelineLimit,
+        });
         await client.fetchAgentTimeline(agentId, {
           direction: "tail",
           limit: initialTimelineLimit,
@@ -114,7 +127,7 @@ export function useAgentInitialization({
         throw error;
       }
     },
-    [client, setAgentInitializing],
+    [client, setAgentInitializing, settings.nativeInitialTimelineLimit],
   );
 
   return { ensureAgentIsInitialized, refreshAgent };
