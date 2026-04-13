@@ -74,6 +74,14 @@ describe("useAgentInitialization timeline request policy", () => {
     ).toBe(500);
   });
 
+  it("defaults mobile platforms to the bounded native bootstrap window", () => {
+    expect(
+      __private__.resolveInitialTimelineLimit({
+        platform: "android",
+      }),
+    ).toBe(100);
+  });
+
   it("keeps web bootstraps unbounded regardless of the native setting", () => {
     expect(
       __private__.resolveInitialTimelineLimit({

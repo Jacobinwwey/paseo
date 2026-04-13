@@ -417,7 +417,7 @@ const THEME_LABELS: Record<AppSettings["theme"], string> = {
 };
 
 const NATIVE_INITIAL_TIMELINE_LIMIT_LABELS: Record<number, string> = {
-  0: "All",
+  0: "All (slow)",
   100: "100",
   200: "200",
   500: "500",
@@ -499,7 +499,8 @@ function GeneralSection({
           <View style={styles.audioRowContent}>
             <Text style={styles.audioRowTitle}>Mobile history window</Text>
             <Text style={styles.audioRowSubtitle}>
-              Maximum canonical messages fetched when a mobile session opens
+              Maximum canonical messages fetched when a mobile session opens. Larger windows cost
+              more memory, network, and reconnect time.
             </Text>
           </View>
           <DropdownMenu>
