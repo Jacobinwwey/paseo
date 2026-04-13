@@ -15,7 +15,11 @@ import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
 import type { Logger } from "pino";
 import { buildProviderRegistry } from "./provider-registry.js";
-import { coerceAgentProvider, toAgentPersistenceHandle } from "../persistence-hooks.js";
+import {
+  coerceAgentProvider,
+  resolveStoredAgentTitle,
+  toAgentPersistenceHandle,
+} from "../persistence-hooks.js";
 
 export type { ManagedAgent };
 
@@ -192,7 +196,7 @@ export function buildStoredAgentPayload(
     availableModes: [],
     pendingPermissions: [],
     persistence: toAgentPersistenceHandle(logger, providerRegistry, record.persistence),
-    title: record.title ?? record.config?.title ?? null,
+    title: resolveStoredAgentTitle(record),
     requiresAttention: record.requiresAttention ?? false,
     attentionReason: record.attentionReason ?? null,
     attentionTimestamp: record.attentionTimestamp ?? null,

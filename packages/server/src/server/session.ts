@@ -64,6 +64,7 @@ import {
   buildExternalBridgeSessionConfig,
   buildSessionConfig,
   extractTimestamps,
+  resolveStoredAgentTitle,
   toAgentPersistenceHandle,
 } from "./persistence-hooks.js";
 import { ensureAgentLoaded } from "./agent/agent-loading.js";
@@ -1072,7 +1073,7 @@ export class Session {
 
   private async buildAgentPayload(agent: ManagedAgent): Promise<AgentSnapshotPayload> {
     const storedRecord = await this.agentStorage.get(agent.id);
-    const title = storedRecord?.title ?? storedRecord?.config?.title ?? null;
+    const title = storedRecord ? resolveStoredAgentTitle(storedRecord) : null;
     const payload = toAgentPayload(agent, { title });
     const storedUpdatedAt = storedRecord ? resolveStoredAgentPayloadUpdatedAt(storedRecord) : null;
     if (storedUpdatedAt) {
@@ -5081,7 +5082,7 @@ export class Session {
       };
     }
 
-    const titleMatches = storedRecords.filter((record) => record.title === trimmed);
+    const titleMatches = storedRecords.filter((record) => resolveStoredAgentTitle(record) === trimmed);
     if (titleMatches.length === 1) {
       return { ok: true, agentId: titleMatches[0].id };
     }
