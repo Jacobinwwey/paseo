@@ -4,6 +4,7 @@ import type {
   ConnectionState,
   FetchAgentsEntry,
   FetchAgentsOptions,
+  FetchAgentsPageInfo,
 } from "@server/client/daemon-client";
 import type { ConnectionOffer } from "@server/shared/connection-offer";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
@@ -23,6 +24,15 @@ class FakeDaemonClient {
   public ensureConnectedCalls = 0;
   public fetchAgentsCalls: FetchAgentsOptions[] = [];
   public fetchAgentsResponses: Array<Awaited<ReturnType<DaemonClient["fetchAgents"]>>> = [];
+  public fetchRecoverableAgentsCalls: Array<{
+    sort?: FetchAgentsOptions["sort"];
+    page?: { limit: number; cursor?: string };
+  }> = [];
+  public fetchRecoverableAgentsResponses: Array<{
+    requestId: string;
+    entries: FetchAgentsEntry[];
+    pageInfo: FetchAgentsPageInfo;
+  }> = [];
 
   async connect(): Promise<void> {
     this.connectCalls += 1;
@@ -71,6 +81,29 @@ class FakeDaemonClient {
     });
   }
 
+  async fetchRecoverableAgents(options?: {
+    sort?: FetchAgentsOptions["sort"];
+    page?: { limit: number; cursor?: string };
+    requestId?: string;
+  }): Promise<{
+    requestId: string;
+    entries: FetchAgentsEntry[];
+    pageInfo: FetchAgentsPageInfo;
+  }> {
+    this.fetchRecoverableAgentsCalls.push({
+      ...(options?.sort ? { sort: options.sort } : {}),
+      ...(options?.page ? { page: options.page } : {}),
+    });
+    const queued = this.fetchRecoverableAgentsResponses.shift();
+    if (queued) {
+      return queued;
+    }
+    return makeFetchRecoverableAgentsPayload({
+      entries: [],
+      requestId: options?.requestId ?? "req_recoverable_test",
+    });
+  }
+
   async ping(): Promise<{ rttMs: number }> {
     return { rttMs: 0 };
   }
@@ -103,6 +136,27 @@ function makeFetchAgentsPayload(input: {
     } as Awaited<ReturnType<DaemonClient["fetchAgents"]>>["pageInfo"],
     ...(input.subscriptionId ? { subscriptionId: input.subscriptionId } : {}),
     requestId: "req_test",
+  };
+}
+
+function makeFetchRecoverableAgentsPayload(input: {
+  entries: FetchAgentsEntry[];
+  hasMore?: boolean;
+  nextCursor?: string | null;
+  requestId?: string;
+}): {
+  requestId: string;
+  entries: FetchAgentsEntry[];
+  pageInfo: FetchAgentsPageInfo;
+} {
+  return {
+    requestId: input.requestId ?? "req_recoverable_test",
+    entries: input.entries,
+    pageInfo: {
+      nextCursor: input.nextCursor ?? null,
+      prevCursor: null,
+      hasMore: input.hasMore ?? false,
+    },
   };
 }
 
@@ -934,6 +988,12 @@ describe("HostRuntimeStore", () => {
       subscribe: { subscriptionId: "app:srv_test" },
       page: { limit: 200 },
     });
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
 
     const snapshot = store.getSnapshot(host.serverId);
     expect(snapshot?.agentDirectoryStatus).toBe("ready");
@@ -982,11 +1042,17 @@ describe("HostRuntimeStore", () => {
       subscribe: { subscriptionId: "app:srv_no_session" },
       page: { limit: 200 },
     });
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
 
     store.syncHosts([]);
   });
 
-  it("fetches all pages during bootstrap so older workspace agents are present", async () => {
+  it("bootstraps recoverable pages after the first hot page so older closed sessions are present", async () => {
     const host = makeHost({
       serverId: "srv_paged",
       connections: [
@@ -1013,7 +1079,9 @@ describe("HostRuntimeStore", () => {
         nextCursor: "cursor-page-2",
         subscriptionId: "app:srv_paged",
       }),
-      makeFetchAgentsPayload({
+    );
+    fakeClient.fetchRecoverableAgentsResponses.push(
+      makeFetchRecoverableAgentsPayload({
         entries: [
           makeFetchAgentsEntry({
             id: "agent-stale-attention",
@@ -1024,7 +1092,7 @@ describe("HostRuntimeStore", () => {
             attentionReason: "error",
           }),
         ],
-        hasMore: false,
+        requestId: "req_recoverable_page_1",
       }),
     );
     const store = new HostRuntimeStore({
@@ -1045,22 +1113,23 @@ describe("HostRuntimeStore", () => {
     store.syncHosts([host]);
 
     const timeoutAt = Date.now() + 300;
-    while (fakeClient.fetchAgentsCalls.length < 2 && Date.now() < timeoutAt) {
+    while (fakeClient.fetchRecoverableAgentsCalls.length < 1 && Date.now() < timeoutAt) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
-    expect(fakeClient.fetchAgentsCalls).toHaveLength(2);
+    expect(fakeClient.fetchAgentsCalls).toHaveLength(1);
     expect(fakeClient.fetchAgentsCalls[0]).toEqual({
       filter: { includeArchived: true },
       sort: [{ key: "updated_at", direction: "desc" }],
       subscribe: { subscriptionId: "app:srv_paged" },
       page: { limit: 200 },
     });
-    expect(fakeClient.fetchAgentsCalls[1]).toEqual({
-      filter: { includeArchived: true },
-      sort: [{ key: "updated_at", direction: "desc" }],
-      page: { limit: 200, cursor: "cursor-page-2" },
-    });
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
 
     let staleAgent =
       useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-stale-attention") ??
@@ -1143,6 +1212,16 @@ describe("HostRuntimeStore", () => {
         page: { limit: 200 },
       },
     ]);
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
 
     store.syncHosts([]);
     useSessionStore.getState().clearSession(host.serverId);
@@ -1173,6 +1252,12 @@ describe("HostRuntimeStore", () => {
           }),
         ],
         subscriptionId: "app:srv_archived_rehydrate",
+      }),
+    );
+    fakeClient.fetchRecoverableAgentsResponses.push(
+      makeFetchRecoverableAgentsPayload({
+        entries: [],
+        requestId: "req_recoverable_archived_rehydrate",
       }),
     );
     const store = new HostRuntimeStore({
@@ -1225,6 +1310,91 @@ describe("HostRuntimeStore", () => {
     }
 
     expect(archivedAt?.toISOString()).toBe("2026-03-30T15:31:00.000Z");
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
+
+    store.syncHosts([]);
+    useSessionStore.getState().clearSession(host.serverId);
+  });
+
+  it("merges recoverable closed sessions that are not present in the hot bootstrap page", async () => {
+    const host = makeHost({
+      serverId: "srv_recoverable_bootstrap",
+      connections: [
+        {
+          id: "direct:lan:6767",
+          type: "directTcp",
+          endpoint: "lan:6767",
+        },
+      ],
+    });
+    const fakeClient = new FakeDaemonClient();
+    fakeClient.setConnectionState({ status: "connected" });
+    fakeClient.fetchAgentsResponses.push(
+      makeFetchAgentsPayload({
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-hot",
+            cwd: "/Users/moboudra/dev/paseo",
+            updatedAt: "2026-04-05T12:00:00.000Z",
+            title: "Hot agent",
+          }),
+        ],
+        subscriptionId: "app:srv_recoverable_bootstrap",
+      }),
+    );
+    fakeClient.fetchRecoverableAgentsResponses.push(
+      makeFetchRecoverableAgentsPayload({
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-recoverable",
+            cwd: "/Users/moboudra/dev/paseo-older",
+            updatedAt: "2026-03-15T12:00:00.000Z",
+            title: "Recoverable agent",
+          }),
+        ],
+        requestId: "req_recoverable_bootstrap",
+      }),
+    );
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => fakeClient as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => ({
+          client: fakeClient as unknown as DaemonClient,
+          serverId: host.serverId,
+          hostname: host.label ?? null,
+        }),
+        getClientId: async () => "cid_test_runtime",
+      },
+    });
+
+    useSessionStore
+      .getState()
+      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
+    store.syncHosts([host]);
+
+    const timeoutAt = Date.now() + 300;
+    let recoverableAgent =
+      useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-recoverable") ?? null;
+    while (!recoverableAgent && Date.now() < timeoutAt) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      recoverableAgent =
+        useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-recoverable") ??
+        null;
+    }
+
+    expect(recoverableAgent?.title).toBe("Recoverable agent");
+    expect(fakeClient.fetchAgentsCalls).toHaveLength(1);
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+    ]);
 
     store.syncHosts([]);
     useSessionStore.getState().clearSession(host.serverId);

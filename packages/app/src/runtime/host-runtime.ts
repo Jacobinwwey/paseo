@@ -1622,7 +1622,7 @@ export class HostRuntimeStore {
 
     const bootstrap = Promise.resolve()
       .then(() =>
-        this.refreshAgentDirectory({
+        this.bootstrapAgentDirectory({
           serverId,
           subscribe: { subscriptionId: `app:${serverId}` },
           page: { limit: DEFAULT_AGENT_DIRECTORY_PAGE_LIMIT },
@@ -1791,6 +1791,77 @@ export class HostRuntimeStore {
       return {
         agents: allAgents,
         subscriptionId,
+      };
+    } catch (error) {
+      controller.markAgentDirectorySyncError(toErrorMessage(error));
+      throw error;
+    }
+  }
+
+  async bootstrapAgentDirectory(input: {
+    serverId: string;
+    subscribe?: FetchAgentsOptions["subscribe"];
+    page?: FetchAgentsOptions["page"];
+  }): Promise<{
+    agents: ReturnType<typeof applyFetchedAgentDirectory>["agents"];
+    subscriptionId: string | null;
+  }> {
+    const controller = this.controllers.get(input.serverId);
+    if (!controller) {
+      throw new Error(`Unknown host runtime for serverId ${input.serverId}`);
+    }
+    const snapshot = controller.getSnapshot();
+    const client = controller.getClient();
+    if (!client || snapshot.connectionStatus !== "online") {
+      throw new Error(`Host ${input.serverId} is not connected`);
+    }
+
+    controller.markAgentDirectorySyncLoading();
+    try {
+      const pageLimit = input.page?.limit ?? DEFAULT_AGENT_DIRECTORY_PAGE_LIMIT;
+      const hotPayload = await client.fetchAgents({
+        filter: { includeArchived: true },
+        sort: DEFAULT_AGENT_DIRECTORY_SORT,
+        ...(input.subscribe ? { subscribe: input.subscribe } : {}),
+        page: { limit: pageLimit },
+      });
+
+      const allAgents = applyFetchedAgentDirectory({
+        serverId: input.serverId,
+        entries: hotPayload.entries,
+      }).agents;
+
+      let recoverableCursor: string | null = null;
+      while (true) {
+        const recoverablePayload = await client.fetchRecoverableAgents({
+          sort: DEFAULT_AGENT_DIRECTORY_SORT,
+          page: recoverableCursor
+            ? { limit: pageLimit, cursor: recoverableCursor }
+            : { limit: pageLimit },
+        });
+        const recoverableAgents = applyFetchedAgentDirectory({
+          serverId: input.serverId,
+          entries: recoverablePayload.entries,
+        }).agents;
+        for (const [agentId, agent] of recoverableAgents) {
+          allAgents.set(agentId, agent);
+        }
+
+        if (!readFetchAgentsHasMore(recoverablePayload.pageInfo)) {
+          break;
+        }
+
+        const nextCursor = readFetchAgentsNextCursor(recoverablePayload.pageInfo);
+        if (!nextCursor) {
+          break;
+        }
+        recoverableCursor = nextCursor;
+      }
+
+      controller.markAgentDirectorySyncReady();
+      return {
+        agents: allAgents,
+        subscriptionId: hotPayload.subscriptionId ?? null,
       };
     } catch (error) {
       controller.markAgentDirectorySyncError(toErrorMessage(error));
