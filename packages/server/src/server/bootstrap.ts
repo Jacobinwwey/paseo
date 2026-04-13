@@ -171,6 +171,7 @@ export type PaseoDaemonConfig = {
   agentClients: Partial<Record<AgentProvider, AgentClient>>;
   agentStoragePath: string;
   relayEnabled?: boolean;
+  agentTimelineMaxItems?: number;
   relayEndpoint?: string;
   relayPublicEndpoint?: string;
   appBaseUrl?: string;
@@ -370,6 +371,7 @@ export async function createPaseoDaemon(
         ...config.agentClients,
       },
       registry: agentStorage,
+      maxTimelineItems: config.agentTimelineMaxItems,
       logger,
     });
     const providerRegistry = buildProviderRegistry(logger, {
