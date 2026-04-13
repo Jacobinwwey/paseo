@@ -683,6 +683,25 @@ export const FetchAgentsRequestMessageSchema = z.object({
     .optional(),
 });
 
+export const FetchRecoverableAgentsRequestMessageSchema = z.object({
+  type: z.literal("fetch_recoverable_agents_request"),
+  requestId: z.string(),
+  sort: z
+    .array(
+      z.object({
+        key: z.enum(["status_priority", "created_at", "updated_at", "title"]),
+        direction: z.enum(["asc", "desc"]),
+      }),
+    )
+    .optional(),
+  page: z
+    .object({
+      limit: z.number().int().positive().max(200),
+      cursor: z.string().min(1).optional(),
+    })
+    .optional(),
+});
+
 const WorkspaceStateBucketSchema = z.enum([
   "needs_input",
   "failed",
@@ -1431,6 +1450,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AbortRequestMessageSchema,
   AudioPlayedMessageSchema,
   FetchAgentsRequestMessageSchema,
+  FetchRecoverableAgentsRequestMessageSchema,
   FetchWorkspacesRequestMessageSchema,
   FetchAgentRequestMessageSchema,
   DeleteAgentRequestMessageSchema,
@@ -1977,6 +1997,24 @@ export const FetchAgentsResponseMessageSchema = z.object({
   payload: z.object({
     requestId: z.string(),
     subscriptionId: z.string().nullable().optional(),
+    entries: z.array(
+      z.object({
+        agent: AgentSnapshotPayloadSchema,
+        project: ProjectPlacementPayloadSchema,
+      }),
+    ),
+    pageInfo: z.object({
+      nextCursor: z.string().nullable(),
+      prevCursor: z.string().nullable(),
+      hasMore: z.boolean(),
+    }),
+  }),
+});
+
+export const FetchRecoverableAgentsResponseMessageSchema = z.object({
+  type: z.literal("fetch_recoverable_agents_response"),
+  payload: z.object({
+    requestId: z.string(),
     entries: z.array(
       z.object({
         agent: AgentSnapshotPayloadSchema,
@@ -2786,6 +2824,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentStreamMessageSchema,
   AgentStatusMessageSchema,
   FetchAgentsResponseMessageSchema,
+  FetchRecoverableAgentsResponseMessageSchema,
   FetchWorkspacesResponseMessageSchema,
   OpenProjectResponseMessageSchema,
   ListAvailableEditorsResponseMessageSchema,
@@ -2896,6 +2935,9 @@ export type LegacyEditorTargetId = z.infer<typeof LegacyEditorTargetIdSchema>;
 export type EditorTargetId = LiteralUnion<KnownEditorTargetId, string>;
 export type EditorTargetDescriptorPayload = z.infer<typeof EditorTargetDescriptorPayloadSchema>;
 export type FetchAgentsResponseMessage = z.infer<typeof FetchAgentsResponseMessageSchema>;
+export type FetchRecoverableAgentsResponseMessage = z.infer<
+  typeof FetchRecoverableAgentsResponseMessageSchema
+>;
 export type FetchWorkspacesResponseMessage = z.infer<typeof FetchWorkspacesResponseMessageSchema>;
 export type OpenProjectResponseMessage = z.infer<typeof OpenProjectResponseMessageSchema>;
 export type ListAvailableEditorsResponseMessage = z.infer<
@@ -2965,6 +3007,9 @@ export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;
 // Type exports for inbound message types
 export type VoiceAudioChunkMessage = z.infer<typeof VoiceAudioChunkMessageSchema>;
 export type FetchAgentsRequestMessage = z.infer<typeof FetchAgentsRequestMessageSchema>;
+export type FetchRecoverableAgentsRequestMessage = z.infer<
+  typeof FetchRecoverableAgentsRequestMessageSchema
+>;
 export type FetchWorkspacesRequestMessage = z.infer<typeof FetchWorkspacesRequestMessageSchema>;
 export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSchema>;
 export type SendAgentMessageRequest = z.infer<typeof SendAgentMessageRequestSchema>;
