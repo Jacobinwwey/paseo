@@ -1300,6 +1300,9 @@ export class DaemonClient {
     const message = SessionInboundMessageSchema.parse({
       type: "fetch_recoverable_agents_request",
       requestId: resolvedRequestId,
+      ...(Object.prototype.hasOwnProperty.call(options ?? {}, "knownFingerprint")
+        ? { knownFingerprint: options?.knownFingerprint ?? null }
+        : {}),
       ...(options?.sort ? { sort: options.sort } : {}),
       ...(options?.page ? { page: options.page } : {}),
     });

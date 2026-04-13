@@ -306,4 +306,98 @@ describe("recoverable agent directory", () => {
     expect(secondResponse.payload.pageInfo.hasMore).toBe(false);
     expect(secondResponse.payload.pageInfo.nextCursor).toBeNull();
   });
+
+  test("fetch_recoverable_agents_request returns notModified when fingerprint matches", async () => {
+    const emitted: Array<{ type: string; payload: any }> = [];
+    const session = createSessionForRecoverableTests({
+      emitted,
+      records: [
+        createRecord({
+          id: "agent-recoverable",
+          title: "Recoverable agent",
+          updatedAt: "2026-04-10T12:00:00.000Z",
+        }),
+      ],
+    });
+
+    await session.handleMessage({
+      type: "fetch_recoverable_agents_request",
+      requestId: "req-recoverable-fingerprint-initial",
+    } as any);
+
+    const initialResponse = emitted.find(
+      (message) =>
+        message.type === "fetch_recoverable_agents_response" &&
+        message.payload.requestId === "req-recoverable-fingerprint-initial",
+    ) as { type: string; payload: any };
+
+    expect(initialResponse.payload.notModified).toBe(false);
+    expect(typeof initialResponse.payload.fingerprint).toBe("string");
+    expect(initialResponse.payload.entries.map((entry: any) => entry.agent.id)).toEqual([
+      "agent-recoverable",
+    ]);
+
+    await session.handleMessage({
+      type: "fetch_recoverable_agents_request",
+      requestId: "req-recoverable-fingerprint-repeat",
+      knownFingerprint: initialResponse.payload.fingerprint,
+    } as any);
+
+    const repeatResponse = emitted.find(
+      (message) =>
+        message.type === "fetch_recoverable_agents_response" &&
+        message.payload.requestId === "req-recoverable-fingerprint-repeat",
+    ) as { type: string; payload: any };
+
+    expect(repeatResponse.payload).toMatchObject({
+      requestId: "req-recoverable-fingerprint-repeat",
+      fingerprint: initialResponse.payload.fingerprint,
+      notModified: true,
+      entries: [],
+      pageInfo: {
+        nextCursor: null,
+        prevCursor: null,
+        hasMore: false,
+      },
+    });
+  });
+
+  test("fetch_recoverable_agents_request returns updated payload when fingerprint is stale", async () => {
+    const emitted: Array<{ type: string; payload: any }> = [];
+    const session = createSessionForRecoverableTests({
+      emitted,
+      records: [
+        createRecord({
+          id: "agent-recoverable-new",
+          title: "New recoverable agent",
+          updatedAt: "2026-04-11T12:00:00.000Z",
+        }),
+        createRecord({
+          id: "agent-recoverable-old",
+          title: "Old recoverable agent",
+          updatedAt: "2026-04-10T12:00:00.000Z",
+        }),
+      ],
+    });
+
+    await session.handleMessage({
+      type: "fetch_recoverable_agents_request",
+      requestId: "req-recoverable-fingerprint-stale",
+      knownFingerprint: "stale-fingerprint",
+      page: { limit: 1 },
+    } as any);
+
+    const response = emitted.find(
+      (message) =>
+        message.type === "fetch_recoverable_agents_response" &&
+        message.payload.requestId === "req-recoverable-fingerprint-stale",
+    ) as { type: string; payload: any };
+
+    expect(response.payload.notModified).toBe(false);
+    expect(response.payload.fingerprint).not.toBe("stale-fingerprint");
+    expect(response.payload.entries.map((entry: any) => entry.agent.id)).toEqual([
+      "agent-recoverable-new",
+    ]);
+    expect(response.payload.pageInfo.hasMore).toBe(true);
+  });
 });

@@ -1092,6 +1092,7 @@ export class HostRuntimeStore {
   private deps: HostRuntimeControllerDeps;
   private lastConnectionStatusByServer = new Map<string, HostRuntimeConnectionStatus>();
   private agentDirectoryBootstrapInFlight = new Map<string, Promise<void>>();
+  private recoverableFingerprintByServer = new Map<string, string>();
   private storageLoaded = false;
   private bootstrapAttempted = false;
 
@@ -1456,6 +1457,7 @@ export class HostRuntimeStore {
       this.controllers.delete(serverId);
       this.lastConnectionStatusByServer.delete(serverId);
       this.agentDirectoryBootstrapInFlight.delete(serverId);
+      this.recoverableFingerprintByServer.delete(serverId);
       void controller.stop();
       this.emit(serverId);
     }
@@ -1819,6 +1821,7 @@ export class HostRuntimeStore {
     controller.markAgentDirectorySyncLoading();
     try {
       const pageLimit = input.page?.limit ?? DEFAULT_AGENT_DIRECTORY_PAGE_LIMIT;
+      const knownRecoverableFingerprint = this.recoverableFingerprintByServer.get(input.serverId);
       const hotPayload = await client.fetchAgents({
         filter: { includeArchived: true },
         sort: DEFAULT_AGENT_DIRECTORY_SORT,
@@ -1835,10 +1838,27 @@ export class HostRuntimeStore {
       while (true) {
         const recoverablePayload = await client.fetchRecoverableAgents({
           sort: DEFAULT_AGENT_DIRECTORY_SORT,
+          ...(recoverableCursor == null && typeof knownRecoverableFingerprint === "string"
+            ? { knownFingerprint: knownRecoverableFingerprint }
+            : {}),
           page: recoverableCursor
             ? { limit: pageLimit, cursor: recoverableCursor }
             : { limit: pageLimit },
         });
+
+        if (
+          typeof recoverablePayload.fingerprint === "string" &&
+          recoverablePayload.fingerprint.length > 0
+        ) {
+          this.recoverableFingerprintByServer.set(input.serverId, recoverablePayload.fingerprint);
+        } else {
+          this.recoverableFingerprintByServer.delete(input.serverId);
+        }
+
+        if (recoverablePayload.notModified) {
+          break;
+        }
+
         const recoverableAgents = applyFetchedAgentDirectory({
           serverId: input.serverId,
           entries: recoverablePayload.entries,

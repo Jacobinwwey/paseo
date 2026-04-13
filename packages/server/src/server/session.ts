@@ -2,6 +2,7 @@ import equal from "fast-deep-equal";
 import { v4 as uuidv4 } from "uuid";
 import { stat } from "fs/promises";
 import { exec } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "util";
 import { resolve, sep } from "path";
 import { homedir } from "node:os";
@@ -4995,6 +4996,41 @@ export class Session {
       );
   }
 
+  private buildRecoverableAgentsFingerprint(
+    agents: AgentSnapshotPayload[],
+  ): string | undefined {
+    if (agents.length === 0) {
+      return undefined;
+    }
+
+    const serialized = JSON.stringify(
+      [...agents]
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((agent) => ({
+          id: agent.id,
+          provider: agent.provider,
+          cwd: agent.cwd,
+          title: agent.title ?? null,
+          updatedAt: agent.updatedAt,
+          createdAt: agent.createdAt,
+          requiresAttention: agent.requiresAttention,
+          attentionReason: agent.attentionReason ?? null,
+          attentionTimestamp: agent.attentionTimestamp ?? null,
+          labels: Object.entries(agent.labels ?? {}).sort(([left], [right]) =>
+            left.localeCompare(right),
+          ),
+          persistence: agent.persistence
+            ? {
+                provider: agent.persistence.provider,
+                sessionId: agent.persistence.sessionId,
+              }
+            : null,
+        })),
+    );
+
+    return createHash("sha256").update(serialized).digest("hex").slice(0, 16);
+  }
+
   private async resolveAgentIdentifier(
     identifier: string,
   ): Promise<{ ok: true; agentId: string } | { ok: false; error: string }> {
@@ -5360,11 +5396,29 @@ export class Session {
   private async listFetchRecoverableAgentsEntries(
     request: Extract<SessionInboundMessage, { type: "fetch_recoverable_agents_request" }>,
   ): Promise<{
+    fingerprint?: string;
+    notModified: boolean;
     entries: FetchRecoverableAgentsResponseEntry[];
     pageInfo: FetchRecoverableAgentsResponsePageInfo;
   }> {
     const sort = this.normalizeFetchAgentsSort(request.sort as FetchAgentsRequestSort[] | undefined);
-    let candidates = await this.listRecoverableAgentPayloads();
+    let candidates = (await this.listRecoverableAgentPayloads()).filter((agent) =>
+      this.isProviderVisibleToClient(agent.provider),
+    );
+    const fingerprint = this.buildRecoverableAgentsFingerprint(candidates);
+
+    if (!request.page?.cursor && request.knownFingerprint === fingerprint) {
+      return {
+        ...(fingerprint ? { fingerprint } : {}),
+        notModified: true,
+        entries: [],
+        pageInfo: {
+          nextCursor: null,
+          prevCursor: null,
+          hasMore: false,
+        },
+      };
+    }
 
     candidates.sort((left, right) => this.compareFetchAgentsAgents(left, right, sort));
     const cursorToken = request.page?.cursor;
@@ -5397,6 +5451,8 @@ export class Session {
     );
 
     return {
+      ...(fingerprint ? { fingerprint } : {}),
+      notModified: false,
       entries,
       pageInfo: {
         nextCursor,
@@ -6113,10 +6169,6 @@ export class Session {
   ): Promise<void> {
     try {
       const payload = await this.listFetchRecoverableAgentsEntries(request);
-
-      payload.entries = payload.entries.filter((entry) =>
-        this.isProviderVisibleToClient(entry.agent.provider),
-      );
 
       this.emit({
         type: "fetch_recoverable_agents_response",

@@ -27,9 +27,12 @@ class FakeDaemonClient {
   public fetchRecoverableAgentsCalls: Array<{
     sort?: FetchAgentsOptions["sort"];
     page?: { limit: number; cursor?: string };
+    knownFingerprint?: string | null;
   }> = [];
   public fetchRecoverableAgentsResponses: Array<{
     requestId: string;
+    fingerprint?: string;
+    notModified: boolean;
     entries: FetchAgentsEntry[];
     pageInfo: FetchAgentsPageInfo;
   }> = [];
@@ -84,15 +87,21 @@ class FakeDaemonClient {
   async fetchRecoverableAgents(options?: {
     sort?: FetchAgentsOptions["sort"];
     page?: { limit: number; cursor?: string };
+    knownFingerprint?: string | null;
     requestId?: string;
   }): Promise<{
     requestId: string;
+    fingerprint?: string;
+    notModified: boolean;
     entries: FetchAgentsEntry[];
     pageInfo: FetchAgentsPageInfo;
   }> {
     this.fetchRecoverableAgentsCalls.push({
       ...(options?.sort ? { sort: options.sort } : {}),
       ...(options?.page ? { page: options.page } : {}),
+      ...(Object.prototype.hasOwnProperty.call(options ?? {}, "knownFingerprint")
+        ? { knownFingerprint: options?.knownFingerprint ?? null }
+        : {}),
     });
     const queued = this.fetchRecoverableAgentsResponses.shift();
     if (queued) {
@@ -144,13 +153,19 @@ function makeFetchRecoverableAgentsPayload(input: {
   hasMore?: boolean;
   nextCursor?: string | null;
   requestId?: string;
+  fingerprint?: string;
+  notModified?: boolean;
 }): {
   requestId: string;
+  fingerprint?: string;
+  notModified: boolean;
   entries: FetchAgentsEntry[];
   pageInfo: FetchAgentsPageInfo;
 } {
   return {
     requestId: input.requestId ?? "req_recoverable_test",
+    ...(input.fingerprint ? { fingerprint: input.fingerprint } : {}),
+    notModified: input.notModified ?? false,
     entries: input.entries,
     pageInfo: {
       nextCursor: input.nextCursor ?? null,
@@ -1222,6 +1237,95 @@ describe("HostRuntimeStore", () => {
         page: { limit: 200 },
       },
     ]);
+
+    store.syncHosts([]);
+    useSessionStore.getState().clearSession(host.serverId);
+  });
+
+  it("skips recoverable pagination on reconnect when fingerprint is unchanged", async () => {
+    const host = makeHost({
+      serverId: "srv_recoverable_reconnect",
+      connections: [
+        {
+          id: "direct:lan:6767",
+          type: "directTcp",
+          endpoint: "lan:6767",
+        },
+      ],
+    });
+    const fakeClient = new FakeDaemonClient();
+    fakeClient.setConnectionState({ status: "connected" });
+    fakeClient.fetchRecoverableAgentsResponses.push(
+      makeFetchRecoverableAgentsPayload({
+        requestId: "req_recoverable_initial",
+        fingerprint: "fp_recoverable_v1",
+        entries: [
+          makeFetchAgentsEntry({
+            id: "agent-recoverable",
+            cwd: "/Users/moboudra/dev/paseo-recoverable",
+            updatedAt: "2026-03-15T12:00:00.000Z",
+            title: "Recoverable agent",
+          }),
+        ],
+      }),
+    );
+    fakeClient.fetchRecoverableAgentsResponses.push(
+      makeFetchRecoverableAgentsPayload({
+        requestId: "req_recoverable_reconnect",
+        fingerprint: "fp_recoverable_v1",
+        notModified: true,
+        entries: [],
+      }),
+    );
+
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => fakeClient as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => ({
+          client: fakeClient as unknown as DaemonClient,
+          serverId: host.serverId,
+          hostname: host.label ?? null,
+        }),
+        getClientId: async () => "cid_test_runtime",
+      },
+    });
+
+    useSessionStore
+      .getState()
+      .initializeSession(host.serverId, fakeClient as unknown as DaemonClient);
+    store.syncHosts([host]);
+
+    const initialTimeoutAt = Date.now() + 300;
+    while (fakeClient.fetchRecoverableAgentsCalls.length < 1 && Date.now() < initialTimeoutAt) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    fakeClient.setConnectionState({
+      status: "disconnected",
+      reason: "client_closed",
+    });
+    fakeClient.setConnectionState({ status: "connected" });
+
+    const reconnectTimeoutAt = Date.now() + 300;
+    while (fakeClient.fetchRecoverableAgentsCalls.length < 2 && Date.now() < reconnectTimeoutAt) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(fakeClient.fetchRecoverableAgentsCalls).toEqual([
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+      },
+      {
+        sort: [{ key: "updated_at", direction: "desc" }],
+        page: { limit: 200 },
+        knownFingerprint: "fp_recoverable_v1",
+      },
+    ]);
+
+    const recoverableAgent =
+      useSessionStore.getState().sessions[host.serverId]?.agents?.get("agent-recoverable") ?? null;
+    expect(recoverableAgent?.title).toBe("Recoverable agent");
 
     store.syncHosts([]);
     useSessionStore.getState().clearSession(host.serverId);

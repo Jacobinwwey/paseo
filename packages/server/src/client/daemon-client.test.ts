@@ -1036,9 +1036,12 @@ describe("DaemonClient", () => {
           direction: "asc" | "desc";
         }>;
         page?: { limit: number; cursor?: string };
+        knownFingerprint?: string | null;
         requestId?: string;
       }) => Promise<{
         requestId: string;
+        fingerprint?: string;
+        notModified: boolean;
         entries: unknown[];
         pageInfo: { nextCursor: string | null; prevCursor: string | null; hasMore: boolean };
       }>;
@@ -1047,6 +1050,7 @@ describe("DaemonClient", () => {
     const promise = runtimeClient.fetchRecoverableAgents({
       sort: [{ key: "updated_at", direction: "desc" }],
       page: { limit: 50, cursor: "recoverable-page-2" },
+      knownFingerprint: "fp_recoverable_known",
     });
 
     expect(mock.sent).toHaveLength(1);
@@ -1060,6 +1064,7 @@ describe("DaemonClient", () => {
           direction: "asc" | "desc";
         }>;
         page?: { limit: number; cursor?: string };
+        knownFingerprint?: string | null;
       };
     };
 
@@ -1068,6 +1073,7 @@ describe("DaemonClient", () => {
       requestId: request.message.requestId,
       sort: [{ key: "updated_at", direction: "desc" }],
       page: { limit: 50, cursor: "recoverable-page-2" },
+      knownFingerprint: "fp_recoverable_known",
     });
 
     mock.triggerMessage(
@@ -1075,6 +1081,8 @@ describe("DaemonClient", () => {
         type: "fetch_recoverable_agents_response",
         payload: {
           requestId: request.message.requestId,
+          fingerprint: "fp_recoverable_next",
+          notModified: false,
           entries: [],
           pageInfo: {
             nextCursor: null,
@@ -1087,6 +1095,8 @@ describe("DaemonClient", () => {
 
     await expect(promise).resolves.toEqual({
       requestId: request.message.requestId,
+      fingerprint: "fp_recoverable_next",
+      notModified: false,
       entries: [],
       pageInfo: {
         nextCursor: null,

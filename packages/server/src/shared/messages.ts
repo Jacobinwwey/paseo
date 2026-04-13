@@ -183,19 +183,19 @@ const McpStdioServerConfigSchema = z.object({
   type: z.literal("stdio"),
   command: z.string(),
   args: z.array(z.string()).optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 const McpHttpServerConfigSchema = z.object({
   type: z.literal("http"),
   url: z.string(),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 const McpSseServerConfigSchema = z.object({
   type: z.literal("sse"),
   url: z.string(),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 const McpServerConfigSchema = z.discriminatedUnion("type", [
@@ -564,7 +564,7 @@ export const AgentSnapshotPayloadSchema = z.object({
   lastUsage: AgentUsageSchema.optional(),
   lastError: z.string().optional(),
   title: z.string().nullable(),
-  labels: z.record(z.string()).default({}),
+  labels: z.record(z.string(), z.string()).default({}),
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
@@ -596,7 +596,7 @@ export const AudioPlayedMessageSchema = z.object({
 });
 
 const AgentDirectoryFilterSchema = z.object({
-  labels: z.record(z.string()).optional(),
+  labels: z.record(z.string(), z.string()).optional(),
   projectKeys: z.array(z.string()).optional(),
   statuses: z.array(AgentStatusSchema).optional(),
   includeArchived: z.boolean().optional(),
@@ -627,7 +627,7 @@ export const UpdateAgentRequestMessageSchema = z.object({
   type: z.literal("update_agent_request"),
   agentId: z.string(),
   name: z.string().optional(),
-  labels: z.record(z.string()).optional(),
+  labels: z.record(z.string(), z.string()).optional(),
   requestId: z.string(),
 });
 
@@ -685,6 +685,7 @@ export const FetchAgentsRequestMessageSchema = z.object({
 export const FetchRecoverableAgentsRequestMessageSchema = z.object({
   type: z.literal("fetch_recoverable_agents_request"),
   requestId: z.string(),
+  knownFingerprint: z.string().min(1).optional(),
   sort: z
     .array(
       z.object({
@@ -838,7 +839,7 @@ export const CreateAgentRequestMessageSchema = z.object({
     )
     .optional(),
   git: GitSetupOptionsSchema.optional(),
-  labels: z.record(z.string()).default({}),
+  labels: z.record(z.string(), z.string()).default({}),
   requestId: z.string(),
 });
 
@@ -2011,6 +2012,8 @@ export const FetchRecoverableAgentsResponseMessageSchema = z.object({
   type: z.literal("fetch_recoverable_agents_response"),
   payload: z.object({
     requestId: z.string(),
+    fingerprint: z.string().min(1).optional(),
+    notModified: z.boolean(),
     entries: z.array(
       z.object({
         agent: AgentSnapshotPayloadSchema,
