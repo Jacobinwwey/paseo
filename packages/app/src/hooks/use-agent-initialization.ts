@@ -10,10 +10,9 @@ import {
   rejectInitDeferred,
 } from "@/utils/agent-initialization";
 import { deriveInitialTimelineRequest } from "@/contexts/session-timeline-bootstrap-policy";
-import { useAppSettings } from "@/hooks/use-settings";
+import { DEFAULT_APP_SETTINGS, useAppSettings } from "@/hooks/use-settings";
 
 const INIT_TIMEOUT_MS = 5 * 60_000;
-const NATIVE_INITIAL_TIMELINE_LIMIT = 200;
 const UNBOUNDED_TIMELINE_LIMIT = 0;
 
 function resolveInitialTimelineLimit(input?: {
@@ -24,7 +23,7 @@ function resolveInitialTimelineLimit(input?: {
   if (platform === "web") {
     return UNBOUNDED_TIMELINE_LIMIT;
   }
-  return input?.nativeInitialTimelineLimit ?? NATIVE_INITIAL_TIMELINE_LIMIT;
+  return input?.nativeInitialTimelineLimit ?? DEFAULT_APP_SETTINGS.nativeInitialTimelineLimit;
 }
 
 export const __private__ = {

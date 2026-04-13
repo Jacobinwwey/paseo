@@ -40,6 +40,16 @@ describe("use-settings", () => {
     expect(result.theme).toBe("auto");
   });
 
+  it("defaults the native history bootstrap limit to a bounded mobile window", async () => {
+    asyncStorageMock.getItem.mockResolvedValue(null);
+    asyncStorageMock.setItem.mockResolvedValue();
+
+    const mod = await import("./use-settings");
+    const result = await mod.loadSettingsFromStorage();
+
+    expect(result.nativeInitialTimelineLimit).toBe(100);
+  });
+
   it("loads persisted built-in daemon management state and normalizes the native limit", async () => {
     asyncStorageMock.getItem.mockImplementation(async (key: string) => {
       if (key === "@paseo:app-settings") {

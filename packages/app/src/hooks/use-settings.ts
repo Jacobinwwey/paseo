@@ -24,7 +24,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: "auto",
   manageBuiltInDaemon: true,
   sendBehavior: "interrupt",
-  nativeInitialTimelineLimit: 200,
+  nativeInitialTimelineLimit: 100,
 };
 
 export interface UseAppSettingsReturn {
