@@ -18,7 +18,7 @@ function createPaseoHome(persistedConfig?: unknown): string {
   return paseoHome;
 }
 
-describe("loadConfig agent timeline budget", () => {
+describe("loadConfig", () => {
   afterEach(() => {
     for (const paseoHome of tempHomes.splice(0)) {
       rmSync(paseoHome, { recursive: true, force: true });
@@ -47,7 +47,7 @@ describe("loadConfig agent timeline budget", () => {
     expect(config.agentTimelineMaxItems).toBe(64);
   });
 
-  test("lets the environment override the persisted agent timeline budget", () => {
+  test("lets environment override persisted agent timeline budget", () => {
     const config = loadConfig(
       createPaseoHome({
         version: 1,
@@ -67,7 +67,7 @@ describe("loadConfig agent timeline budget", () => {
     expect(config.agentTimelineMaxItems).toBe(128);
   });
 
-  test("ignores invalid environment overrides and falls back to persisted config", () => {
+  test("ignores invalid timeline env overrides and falls back to persisted config", () => {
     const config = loadConfig(
       createPaseoHome({
         version: 1,
@@ -85,5 +85,33 @@ describe("loadConfig agent timeline budget", () => {
     );
 
     expect(config.agentTimelineMaxItems).toBe(64);
+  });
+
+  test("defaults external codex relaunch command to undefined", () => {
+    const config = loadConfig(createPaseoHome(), {
+      env: {},
+    });
+
+    expect(config.externalCodexRelaunchCommand).toEqual(undefined);
+  });
+
+  test("accepts custom external codex relaunch executable from env", () => {
+    const config = loadConfig(createPaseoHome(), {
+      env: {
+        PASEO_EXTERNAL_CODEX_RELAUNCH_COMMAND: "/usr/local/bin/codex-root-wrapper",
+      },
+    });
+
+    expect(config.externalCodexRelaunchCommand).toEqual(["/usr/local/bin/codex-root-wrapper"]);
+  });
+
+  test("falls back to codex when relaunch executable env is blank", () => {
+    const config = loadConfig(createPaseoHome(), {
+      env: {
+        PASEO_EXTERNAL_CODEX_RELAUNCH_COMMAND: "   ",
+      },
+    });
+
+    expect(config.externalCodexRelaunchCommand).toEqual(["codex"]);
   });
 });

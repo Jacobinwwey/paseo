@@ -186,6 +186,7 @@ export type PaseoDaemonConfig = {
   downloadTokenTtlMs?: number;
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   providerOverrides?: Record<string, ProviderOverride>;
+  externalCodexRelaunchCommand?: string[];
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
 };
 
@@ -438,6 +439,7 @@ export async function createPaseoDaemon(
       agentStorage,
       projectRegistry,
       workspaceRegistry,
+      relaunchCommand: config.externalCodexRelaunchCommand,
     });
     await tmuxCodexBridge.start();
     const codexProcessBridge = new CodexProcessBridgeService({
