@@ -36,7 +36,8 @@ function createRecord(overrides: Partial<StoredAgentRecord>): StoredAgentRecord 
     runtimeInfo: overrides.runtimeInfo,
     features: overrides.features,
     persistence:
-      Object.prototype.hasOwnProperty.call(overrides, "persistence") && overrides.persistence === null
+      Object.prototype.hasOwnProperty.call(overrides, "persistence") &&
+      overrides.persistence === null
         ? null
         : (overrides.persistence ?? {
             provider: overrides.provider ?? "codex",
