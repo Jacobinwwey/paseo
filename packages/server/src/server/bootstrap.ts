@@ -187,6 +187,7 @@ export type PaseoDaemonConfig = {
   agentProviderSettings?: AgentProviderRuntimeSettingsMap;
   providerOverrides?: Record<string, ProviderOverride>;
   externalCodexRelaunchCommand?: string[];
+  tmuxCodexBridgeEnabled?: boolean;
   onLifecycleIntent?: (intent: DaemonLifecycleIntent) => void;
 };
 
@@ -432,16 +433,21 @@ export async function createPaseoDaemon(
       { elapsed: elapsed() },
       `Agent registry loaded (${persistedRecords.length} record${persistedRecords.length === 1 ? "" : "s"}); agents will initialize on demand`,
     );
-    const tmuxCodexBridge = new TmuxCodexBridgeService({
-      logger,
-      paseoHome: config.paseoHome,
-      agentManager,
-      agentStorage,
-      projectRegistry,
-      workspaceRegistry,
-      relaunchCommand: config.externalCodexRelaunchCommand,
-    });
-    await tmuxCodexBridge.start();
+    const tmuxCodexBridge =
+      config.tmuxCodexBridgeEnabled === false
+        ? null
+        : new TmuxCodexBridgeService({
+            logger,
+            paseoHome: config.paseoHome,
+            agentManager,
+            agentStorage,
+            projectRegistry,
+            workspaceRegistry,
+            relaunchCommand: config.externalCodexRelaunchCommand,
+          });
+    if (tmuxCodexBridge) {
+      await tmuxCodexBridge.start();
+    }
     const codexProcessBridge = new CodexProcessBridgeService({
       logger,
       paseoHome: config.paseoHome,
@@ -728,7 +734,7 @@ export async function createPaseoDaemon(
         providerOverrides: config.providerOverrides,
       });
       await codexProcessBridge.stop().catch(() => undefined);
-      await tmuxCodexBridge.stop().catch(() => undefined);
+      await tmuxCodexBridge?.stop().catch(() => undefined);
       terminalManager.killAll();
       speechService.stop();
       await scheduleService.stop().catch(() => undefined);

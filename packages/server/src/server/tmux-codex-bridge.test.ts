@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  TmuxCodexBridge,
   buildTmuxCodexPaneSnapshot,
   parseTmuxListPanesOutput,
   parseUnixProcessTable,
@@ -100,5 +101,45 @@ describe("tmux codex bridge discovery", () => {
       processPid: 1827143,
       codexSessionId: "019d7f5b-1d2c-76c2-96e9-0a6496559b68",
     });
+  });
+
+  it("treats a missing tmux socket as an empty discovery result", async () => {
+    const warn = vi.fn();
+    const bridge = new TmuxCodexBridge({
+      logger: {
+        child: () => ({
+          warn,
+          debug: vi.fn(),
+        }),
+      } as any,
+      runner: {
+        execFile: vi.fn().mockRejectedValue(
+          new Error(
+            "Command failed: tmux list-panes -a -F ...\nerror connecting to /tmp/tmux-0/paseo-e2e (No such file or directory)\n",
+          ),
+        ),
+      },
+    });
+
+    await expect(bridge.discover()).resolves.toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("still warns for unexpected tmux discovery failures", async () => {
+    const warn = vi.fn();
+    const bridge = new TmuxCodexBridge({
+      logger: {
+        child: () => ({
+          warn,
+          debug: vi.fn(),
+        }),
+      } as any,
+      runner: {
+        execFile: vi.fn().mockRejectedValue(new Error("tmux permission denied")),
+      },
+    });
+
+    await expect(bridge.discover()).resolves.toEqual([]);
+    expect(warn).toHaveBeenCalledOnce();
   });
 });

@@ -114,4 +114,14 @@ describe("loadConfig", () => {
 
     expect(config.externalCodexRelaunchCommand).toEqual(["codex"]);
   });
+
+  test("allows disabling the tmux codex bridge from env", () => {
+    const config = loadConfig("/tmp/paseo-config-test", {
+      env: {
+        PASEO_TMUX_CODEX_BRIDGE_ENABLED: "0",
+      },
+    });
+
+    expect(config.tmuxCodexBridgeEnabled).toBe(false);
+  });
 });

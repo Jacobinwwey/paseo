@@ -191,6 +191,7 @@ export function loadConfig(
     env.PASEO_EXTERNAL_CODEX_RELAUNCH_COMMAND,
     DEFAULT_EXTERNAL_CODEX_RELAUNCH_COMMAND,
   );
+  const tmuxCodexBridgeEnabled = parseBooleanEnv(env.PASEO_TMUX_CODEX_BRIDGE_ENABLED) ?? true;
 
   const { openai, speech } = resolveSpeechConfig({
     paseoHome,
@@ -236,7 +237,6 @@ export function loadConfig(
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     providerOverrides,
     externalCodexRelaunchCommand,
-    agentProviderSettings: extractAgentProviderSettings(providerOverrides),
-    providerOverrides,
+    tmuxCodexBridgeEnabled,
   };
 }

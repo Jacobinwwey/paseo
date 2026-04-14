@@ -458,6 +458,90 @@ describe("external bridged session recovery", () => {
     expect(refreshed?.payload.agentId).toBe(storedRecord.id);
   });
 
+  test("refresh_agent_request surfaces a dedicated error when external relaunch needs tmux but the tmux bridge is disabled", async () => {
+    const storedRecord = {
+      id: "agent-external-refresh-no-tmux",
+      provider: "codex",
+      cwd: "/workspace/project",
+      createdAt: "2026-04-12T00:00:00.000Z",
+      updatedAt: "2026-04-12T00:10:00.000Z",
+      lastActivityAt: "2026-04-12T00:10:00.000Z",
+      lastUserMessageAt: null,
+      lastStatus: "closed",
+      lastModeId: "auto",
+      runtimeInfo: {
+        provider: "codex",
+        sessionId: "/dev/pts/2",
+        model: null,
+        modeId: "auto",
+        extra: {
+          externalSessionSource: "codex_process",
+          tty: "/dev/pts/2",
+          sessionId: null,
+        },
+      },
+      config: {
+        provider: "codex",
+        cwd: "/workspace/project",
+        modeId: "auto",
+        title: "project [pts/2]",
+      },
+      persistence: {
+        provider: "codex",
+        sessionId: "/dev/pts/2",
+        metadata: {
+          externalSessionSource: "codex_process",
+          tty: "/dev/pts/2",
+          sessionId: null,
+          cwd: "/workspace/project",
+        },
+      },
+      title: "project [pts/2]",
+      labels: { bridge: "codex_process", source: "external", tty: "pts/2" },
+      requiresAttention: false,
+      attentionReason: null,
+      attentionTimestamp: null,
+      archivedAt: null,
+    };
+
+    const codexProcessBridge = {
+      resumeFromPersistence: vi
+        .fn()
+        .mockRejectedValue(new Error("codex process session not found for agent-external-refresh-no-tmux")),
+    };
+
+    const emitted: any[] = [];
+    const session = createSessionForExternalRecoveryTests({
+      onMessage: (message) => emitted.push(message),
+      agentStorage: {
+        get: async (agentId: string) => (agentId === storedRecord.id ? storedRecord : null),
+        list: async () => [storedRecord],
+      },
+      agentManager: {
+        getTimeline: () => [],
+      } as any,
+      codexProcessBridge: codexProcessBridge as any,
+      tmuxCodexBridge: null,
+    });
+
+    await session.handleMessage({
+      type: "refresh_agent_request",
+      agentId: storedRecord.id,
+      requestId: "refresh-external-no-tmux",
+    });
+
+    expect(codexProcessBridge.resumeFromPersistence).toHaveBeenCalledOnce();
+    const errorLog = emitted.find(
+      (message) =>
+        message.type === "activity_log" &&
+        typeof message.payload?.content === "string" &&
+        message.payload.content.includes("tmux bridge is not available"),
+    );
+    expect(errorLog?.payload?.content).toContain(
+      "Cannot relaunch external Codex session because the tmux bridge is not available",
+    );
+  });
+
   test("fetch_agents_request resolves live tmux session titles from renamed pane metadata", async () => {
     const storedRecord = {
       id: "agent-live-tmux",

@@ -1163,8 +1163,13 @@ export class Session {
       try {
         return await this.codexProcessBridge.resumeFromPersistence(input);
       } catch (error) {
-        if (!this.tmuxCodexBridge || !this.shouldRelaunchExternalCodexSession(error)) {
+        if (!this.shouldRelaunchExternalCodexSession(error)) {
           throw error;
+        }
+        if (!this.tmuxCodexBridge) {
+          throw new Error(
+            "Cannot relaunch external Codex session because the tmux bridge is not available",
+          );
         }
         return await this.tmuxCodexBridge.relaunchFromPersistence(input);
       }
