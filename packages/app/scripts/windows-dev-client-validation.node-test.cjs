@@ -83,12 +83,7 @@ test("parseArgs accepts repeated env overrides and skip flags", () => {
 });
 
 test("parseArgs accepts request capture and retry flags", () => {
-  const args = parseArgs([
-    "--port",
-    "8104",
-    "--capture-first-request",
-    "--retry-on-timeout",
-  ]);
+  const args = parseArgs(["--port", "8104", "--capture-first-request", "--retry-on-timeout"]);
 
   assert.equal(args.port, 8104);
   assert.equal(args.captureFirstRequest, true);
@@ -183,13 +178,10 @@ test("classifyValidationResult ignores unrelated logcat timeouts when the app UI
 });
 
 test("buildSpawnInvocation routes npm.cmd through cmd.exe on Windows", () => {
-  assert.deepEqual(
-    buildSpawnInvocation("npm", ["run", "build:workspace-deps"], "win32"),
-    {
-      command: "cmd.exe",
-      args: ["/d", "/s", "/c", "npm.cmd", "run", "build:workspace-deps"],
-    },
-  );
+  assert.deepEqual(buildSpawnInvocation("npm", ["run", "build:workspace-deps"], "win32"), {
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", "npm.cmd", "run", "build:workspace-deps"],
+  });
 });
 
 test("buildSpawnInvocation leaves adb untouched on Windows", () => {
