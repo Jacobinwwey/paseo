@@ -194,6 +194,30 @@ afterEach(async () => {
 });
 
 describe("TmuxCodexBridgeService", () => {
+  it("waits briefly before sending Enter after literal tmux input", async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, calls } = createService({});
+
+      const sendPromise = (service as any).sendKeys("%42", ["Decode base64 UFIzMzNPSw==", "Enter"]);
+      await Promise.resolve();
+
+      expect(calls).toEqual([
+        { file: "tmux", args: ["send-keys", "-t", "%42", "-l", "Decode base64 UFIzMzNPSw=="] },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(60);
+      await sendPromise;
+
+      expect(calls).toEqual([
+        { file: "tmux", args: ["send-keys", "-t", "%42", "-l", "Decode base64 UFIzMzNPSw=="] },
+        { file: "tmux", args: ["send-keys", "-t", "%42", "Enter"] },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adopts live tmux codex panes into the agent manager", async () => {
     const { service, adoptSession } = createService({});
 
@@ -282,6 +306,29 @@ describe("TmuxCodexBridgeService", () => {
       }),
     );
     expect(setTitle).toHaveBeenCalledWith("agent-tmux", "PASEO_RENAMED_20260413");
+  });
+
+  it("refreshes tracked tmux pane titles after a live rename", async () => {
+    const { service, state, setTitle } = createService({
+      title: "jacob",
+      storedRecords: [
+        createStoredRecord({
+          id: "agent-tmux",
+          title: "jacob",
+          labels: { source: "tmux", bridge: "codex", pane: "%42" },
+        }),
+      ],
+    });
+
+    await service.syncNow();
+    setTitle.mockClear();
+
+    state.listPanesOutput =
+      "%42\tworkspace-a\t@1\tPR333 Manual Verify\t1001\t/dev/pts/21\t/workspace/project\n";
+
+    await service.syncNow();
+
+    expect(setTitle).toHaveBeenCalledWith("agent-tmux", "PR333 Manual Verify");
   });
 
   it("marks persisted tmux sessions closed when their pane is missing after restart", async () => {
