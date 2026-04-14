@@ -49,6 +49,7 @@ const DEFAULT_SCAN_INTERVAL_MS = 2500;
 const DEFAULT_MISSING_SCAN_GRACE = 2;
 const TMUX_CODEX_SOURCE = "tmux_codex";
 const DEFAULT_RELAUNCH_COMMAND = ["codex"] as const;
+const TMUX_LITERAL_FLUSH_DELAY_MS = 60;
 
 function parseOptionalDate(value: string | null | undefined): Date | null {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -353,6 +354,11 @@ export class TmuxCodexBridgeService {
         if (trackedByPane.agentId === canonicalAgentId) {
           seenAgentIds.add(trackedByPane.agentId);
           trackedByPane.missingScans = 0;
+          await this.refreshTrackedPaneTitle({
+            agentId: trackedByPane.agentId,
+            snapshot,
+            canonicalRecord,
+          });
           continue;
         }
         await this.disposeTrackedAgentId(trackedByPane.agentId);
@@ -684,6 +690,37 @@ export class TmuxCodexBridgeService {
     }
   }
 
+  private async refreshTrackedPaneTitle(input: {
+    agentId: string;
+    snapshot: TmuxCodexPaneSnapshot;
+    canonicalRecord: StoredAgentRecord | null;
+  }): Promise<void> {
+    const liveTitle = normalizePreferredTitle(input.snapshot.title);
+    if (!liveTitle) {
+      return;
+    }
+
+    const persistedTitle = normalizePreferredTitle(input.canonicalRecord?.title);
+    if (persistedTitle === liveTitle) {
+      return;
+    }
+
+    try {
+      await this.agentManager.setTitle(input.agentId, liveTitle);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          agentId: input.agentId,
+          paneId: input.snapshot.paneId,
+          liveTitle,
+          persistedTitle,
+        },
+        "Failed to refresh tracked tmux pane title",
+      );
+    }
+  }
+
   private resolveRecoverableCodexSessionId(handle: AgentPersistenceHandle): string | null {
     const candidates = [
       handle.metadata?.codexSessionId,
@@ -800,12 +837,19 @@ export class TmuxCodexBridgeService {
   }
 
   private async sendKeys(paneId: string, keys: string[]): Promise<void> {
+    let previousWasLiteral = false;
     for (const key of keys) {
       if (key === "Enter" || key === "C-c") {
+        if (previousWasLiteral) {
+          // tmux can occasionally process the control key before a longer literal paste settles.
+          await new Promise((resolve) => setTimeout(resolve, TMUX_LITERAL_FLUSH_DELAY_MS));
+        }
         await this.runner.execFile("tmux", ["send-keys", "-t", paneId, key]);
+        previousWasLiteral = false;
         continue;
       }
       await this.runner.execFile("tmux", ["send-keys", "-t", paneId, "-l", key]);
+      previousWasLiteral = true;
     }
   }
 
