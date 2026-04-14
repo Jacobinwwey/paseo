@@ -297,20 +297,12 @@ type FetchAgentsResponsePayload = Extract<
 >["payload"];
 type FetchAgentsResponseEntry = FetchAgentsResponsePayload["entries"][number];
 type FetchAgentsResponsePageInfo = FetchAgentsResponsePayload["pageInfo"];
-type FetchRecoverableAgentsRequestMessage = Extract<
-  SessionInboundMessage,
-  { type: "fetch_recoverable_agents_request" }
->;
-type FetchRecoverableAgentsRequestSort = NonNullable<
-  FetchRecoverableAgentsRequestMessage["sort"]
->[number];
 type FetchRecoverableAgentsResponsePayload = Extract<
   SessionOutboundMessage,
   { type: "fetch_recoverable_agents_response" }
 >["payload"];
 type FetchRecoverableAgentsResponseEntry = FetchRecoverableAgentsResponsePayload["entries"][number];
-type FetchRecoverableAgentsResponsePageInfo =
-  FetchRecoverableAgentsResponsePayload["pageInfo"];
+type FetchRecoverableAgentsResponsePageInfo = FetchRecoverableAgentsResponsePayload["pageInfo"];
 type AgentUpdatePayload = Extract<SessionOutboundMessage, { type: "agent_update" }>["payload"];
 type AgentUpdatesFilter = FetchAgentsRequestFilter;
 type AgentUpdatesSubscriptionState = {
@@ -5220,7 +5212,9 @@ export class Session {
     entries: FetchRecoverableAgentsResponseEntry[];
     pageInfo: FetchRecoverableAgentsResponsePageInfo;
   }> {
-    const sort = this.normalizeFetchAgentsSort(request.sort as FetchAgentsRequestSort[] | undefined);
+    const sort = this.normalizeFetchAgentsSort(
+      request.sort as FetchAgentsRequestSort[] | undefined,
+    );
     let candidates = await this.listRecoverableAgentPayloads();
 
     candidates.sort((left, right) => this.compareFetchAgentsAgents(left, right, sort));
@@ -6000,15 +5994,9 @@ export class Session {
       });
     } catch (error) {
       const code =
-        error instanceof SessionRequestError
-          ? error.code
-          : "fetch_recoverable_agents_failed";
-      const message =
-        error instanceof Error ? error.message : "Failed to fetch recoverable agents";
-      this.sessionLogger.error(
-        { err: error },
-        "Failed to handle fetch_recoverable_agents_request",
-      );
+        error instanceof SessionRequestError ? error.code : "fetch_recoverable_agents_failed";
+      const message = error instanceof Error ? error.message : "Failed to fetch recoverable agents";
+      this.sessionLogger.error({ err: error }, "Failed to handle fetch_recoverable_agents_request");
       this.emit({
         type: "rpc_error",
         payload: {
