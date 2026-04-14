@@ -216,10 +216,10 @@ function buildExpoEnv(baseEnv, options) {
   }
 
   const nextNoProxy = uniqueCsv([
-    ...(String(env.NO_PROXY ?? "")
+    ...String(env.NO_PROXY ?? "")
       .split(",")
       .map((entry) => entry.trim())
-      .filter(Boolean)),
+      .filter(Boolean),
     "localhost",
     "127.0.0.1",
   ]);
@@ -277,7 +277,9 @@ function classifyValidationResult({ uiDumpXml, logcatText, launchOutput, success
   }
 
   if (
-    /SocketTimeoutException|Read timed out|timeout waiting for response headers/i.test(deviceLogcat) &&
+    /SocketTimeoutException|Read timed out|timeout waiting for response headers/i.test(
+      deviceLogcat,
+    ) &&
     /sh\.paseo(?:\.debug)?|DevLauncherErrorActivity|expo\.modules\.devlauncher/i.test(deviceLogcat)
   ) {
     return {
@@ -415,9 +417,7 @@ function spawnCapture(command, args, options = {}) {
       const stderr = Buffer.concat(stderrChunks).toString("utf8");
       if (code !== 0 && !options.allowFailure) {
         reject(
-          new Error(
-            `${command} ${args.join(" ")} exited with code ${code}\n${stdout}${stderr}`,
-          ),
+          new Error(`${command} ${args.join(" ")} exited with code ${code}\n${stdout}${stderr}`),
         );
         return;
       }
@@ -535,7 +535,10 @@ function probeHttp(url) {
 
 function cloneHeaders(headers) {
   return Object.fromEntries(
-    Object.entries(headers ?? {}).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value]),
+    Object.entries(headers ?? {}).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.join(", ") : value,
+    ]),
   );
 }
 
@@ -849,14 +852,14 @@ function startExpoProcess(config) {
   ensureDir(path.dirname(config.artifactPaths.expoLog));
   const logStream = fs.createWriteStream(config.artifactPaths.expoLog);
   const invocation = buildSpawnInvocation("npx", [
-      "expo",
-      "start",
-      "--dev-client",
-      "--host",
-      config.host,
-      "--port",
-      String(config.metroPort),
-    ]);
+    "expo",
+    "start",
+    "--dev-client",
+    "--host",
+    config.host,
+    "--port",
+    String(config.metroPort),
+  ]);
   const child = spawn(invocation.command, invocation.args, {
     cwd: config.appDir,
     env: config.expoEnv,
@@ -1021,7 +1024,13 @@ async function captureDeviceState(config, adbPrefix, artifactPaths) {
     uiDumpXml = fs.readFileSync(artifactPaths.uiDump, "utf8");
   }
 
-  const activityTop = await spawnCapture("adb", [...adbPrefix, "shell", "dumpsys", "activity", "top"]);
+  const activityTop = await spawnCapture("adb", [
+    ...adbPrefix,
+    "shell",
+    "dumpsys",
+    "activity",
+    "top",
+  ]);
   writeTextFile(artifactPaths.activityTop, `${activityTop.stdout}${activityTop.stderr}`);
 
   const logcat = await spawnCapture("adb", [...adbPrefix, "logcat", "-d", "-v", "time"], {
@@ -1236,11 +1245,7 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   process.exitCode =
-    summary.status === "dev_client_read_timeout"
-      ? 2
-      : summary.status === "launch_failed"
-        ? 3
-        : 4;
+    summary.status === "dev_client_read_timeout" ? 2 : summary.status === "launch_failed" ? 3 : 4;
 }
 
 module.exports = {
