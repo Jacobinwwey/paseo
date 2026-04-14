@@ -385,6 +385,115 @@ test("runValidation persists failing adb devices output for later inspection", a
   }
 });
 
+test("runValidation force-stops the dev client before launching and retrying", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "paseo-validation-force-stop-"));
+  const config = buildConfig(
+    {
+      port: 8110,
+      host: "lan",
+      launchHost: "127.0.0.1",
+      deviceId: "f66d9150",
+      appId: "sh.paseo.debug",
+      scheme: "exp+voice-mobile",
+      outputDir,
+      waitMs: 1,
+      startupTimeoutMs: 1000,
+      successText: "Welcome to Paseo",
+      envOverrides: {},
+      keepProxyEnv: false,
+      buildWorkspaceDeps: false,
+      adbReverse: false,
+      captureScreenshot: false,
+      captureUiDump: false,
+      clearLogcat: false,
+      help: false,
+      captureFirstRequest: false,
+      retryOnTimeout: true,
+    },
+    {
+      repoRoot: "/repo",
+      appDir: "/repo/packages/app",
+      baseEnv: {},
+    },
+  );
+  const spawnInvocations = [];
+  let captureCount = 0;
+
+  try {
+    const summary = await runValidation(config, {
+      spawnCapture: async (command, args) => {
+        spawnInvocations.push({ command, args });
+
+        if (command === "adb" && args[0] === "devices") {
+          return { stdout: "List of devices attached\nf66d9150\tdevice\n", stderr: "" };
+        }
+
+        if (command === "adb" && args.includes("force-stop")) {
+          return { stdout: "", stderr: "" };
+        }
+
+        if (command === "adb" && args.includes("start")) {
+          return { stdout: "Starting: Intent { ... }\nComplete\n", stderr: "" };
+        }
+
+        throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+      },
+      startRequestCaptureProxy: () => null,
+      startExpoProcess: () => ({
+        child: { exitCode: null },
+        getOutput: () => "Waiting on http://localhost:8110",
+        stop: async () => {},
+      }),
+      waitForExpoReady: async () => {},
+      captureDeviceState: async () => {
+        captureCount += 1;
+        if (captureCount === 1) {
+          return {
+            uiDumpXml:
+              '<node text="There was a problem loading the project." /><node text="java.net.SocketTimeoutException: timeout" />',
+            logcatText: "",
+          };
+        }
+
+        return {
+          uiDumpXml: '<node text="Welcome to Paseo" />',
+          logcatText: "",
+        };
+      },
+    });
+
+    assert.equal(summary.status, "app_loaded_after_retry");
+    assert.equal(summary.reason, "retry_recovered_after_timeout");
+
+    const initialForceStopIndex = spawnInvocations.findIndex(
+      (invocation) =>
+        invocation.command === "adb" &&
+        invocation.args.join(" ") === "-s f66d9150 shell am force-stop sh.paseo.debug",
+    );
+    const initialLaunchIndex = spawnInvocations.findIndex(
+      (invocation) =>
+        invocation.command === "adb" && invocation.args.includes("start") && invocation.args[0] === "-s",
+    );
+    const retryForceStopIndex = spawnInvocations.findIndex(
+      (invocation, index) =>
+        index > initialLaunchIndex &&
+        invocation.command === "adb" &&
+        invocation.args.join(" ") === "-s f66d9150 shell am force-stop sh.paseo.debug",
+    );
+    const retryLaunchIndex = spawnInvocations.findLastIndex(
+      (invocation) =>
+        invocation.command === "adb" && invocation.args.includes("start") && invocation.args[0] === "-s",
+    );
+
+    assert.notEqual(initialForceStopIndex, -1);
+    assert.notEqual(retryForceStopIndex, -1);
+    assert.ok(initialForceStopIndex < initialLaunchIndex);
+    assert.ok(retryForceStopIndex < retryLaunchIndex);
+  } finally {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
 test("buildUpstreamRequestHeaders rewrites host to Metro and strips hop-by-hop headers", () => {
   assert.deepEqual(
     buildUpstreamRequestHeaders(

@@ -1315,6 +1315,11 @@ async function runValidation(config, dependencies = {}) {
       );
     }
 
+    setPhase("force_stop_app");
+    await spawnCaptureFn("adb", [...adbPrefix, "shell", "am", "force-stop", config.appId], {
+      timeoutMs: DEFAULT_ADB_COMMAND_TIMEOUT_MS,
+    });
+
     setPhase("launch_app");
     const launch = await spawnCaptureFn(
       "adb",
@@ -1362,6 +1367,11 @@ async function runValidation(config, dependencies = {}) {
     }
 
     if (config.retryOnTimeout && initialClassification.status === "dev_client_read_timeout") {
+      setPhase("retry_force_stop_app");
+      await spawnCaptureFn("adb", [...adbPrefix, "shell", "am", "force-stop", config.appId], {
+        timeoutMs: DEFAULT_ADB_COMMAND_TIMEOUT_MS,
+      });
+
       setPhase("retry_launch");
       const retryLaunch = await spawnCaptureFn(
         "adb",
