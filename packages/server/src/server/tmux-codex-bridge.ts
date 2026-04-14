@@ -245,6 +245,11 @@ export function readTmuxCodexPaneId(handle: AgentPersistenceHandle): string {
   return paneId;
 }
 
+function isMissingTmuxSocketError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("error connecting to ") && message.includes("No such file or directory");
+}
+
 export class TmuxCodexBridge {
   private readonly logger: Logger;
   private readonly runner: TmuxCodexCommandRunner;
@@ -258,6 +263,9 @@ export class TmuxCodexBridge {
     try {
       return await discoverTmuxCodexPaneSnapshots({ runner: this.runner });
     } catch (error) {
+      if (isMissingTmuxSocketError(error)) {
+        return [];
+      }
       this.logger.warn({ err: error }, "Failed to discover tmux codex panes");
       return [];
     }
