@@ -78,6 +78,11 @@ function computeAppendedText(previous: string, next: string): string | null {
   return appended.length > 0 ? appended : null;
 }
 
+function isMissingTmuxPaneError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("can't find pane:");
+}
+
 export interface CreateTmuxCodexSessionOptions {
   sessionId: string;
   paneId: string;
@@ -165,6 +170,17 @@ export function createTmuxCodexSession(options: CreateTmuxCodexSessionOptions): 
     }
   };
 
+  const capturePaneSnapshot = async (): Promise<string> => {
+    try {
+      return await options.capturePane(options.paneId);
+    } catch (error) {
+      if (isMissingTmuxPaneError(error)) {
+        return "";
+      }
+      throw error;
+    }
+  };
+
   const emitBootstrapEvents = async () => {
     if (bootstrapStarted) {
       return;
@@ -190,7 +206,7 @@ export function createTmuxCodexSession(options: CreateTmuxCodexSessionOptions): 
       return;
     }
 
-    const initialCapture = await options.capturePane(options.paneId);
+    const initialCapture = await capturePaneSnapshot();
     if (!latestCaptured) {
       latestCaptured = (initialCapture ?? "").trimEnd();
     }
@@ -218,7 +234,7 @@ export function createTmuxCodexSession(options: CreateTmuxCodexSessionOptions): 
     }
     const [timelineSnapshot, capture, alive] = await Promise.all([
       loadTimelineSnapshot(),
-      options.capturePane(options.paneId),
+      capturePaneSnapshot(),
       options.isProcessAlive(),
     ]);
     const normalizedCapture = (capture ?? "").trimEnd();
@@ -370,7 +386,7 @@ export function createTmuxCodexSession(options: CreateTmuxCodexSessionOptions): 
         return;
       }
 
-      const initialCapture = await options.capturePane(options.paneId);
+      const initialCapture = await capturePaneSnapshot();
       const trimmed = (initialCapture ?? "").trimEnd();
       if (!latestCaptured) {
         latestCaptured = trimmed;
