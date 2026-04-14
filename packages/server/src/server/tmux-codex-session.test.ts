@@ -71,4 +71,31 @@ describe("tmux codex session", () => {
     unsubscribe();
     await session.close();
   });
+
+  it("treats a missing tmux pane as empty output instead of rejecting", async () => {
+    const capturePane = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("Command failed: tmux capture-pane -p -J -S -200 -t %12\ncan't find pane: %12\n"))
+      .mockRejectedValueOnce(new Error("Command failed: tmux capture-pane -p -J -S -200 -t %12\ncan't find pane: %12\n"));
+    const session = createTmuxCodexSession({
+      sessionId: "019d7f5b-1d2c-76c2-96e9-0a6496559b68",
+      paneId: "%12",
+      cwd: "/workspace/project",
+      title: "project",
+      capturePane,
+      sendKeys: vi.fn(async () => undefined),
+      isProcessAlive: vi.fn(async () => false),
+      pollIntervalMs: 10_000,
+      settleDelayMs: 500,
+    });
+
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(history).toEqual([]);
+
+    await expect(session.pollNow()).resolves.toBeUndefined();
+    await session.close();
+  });
 });
