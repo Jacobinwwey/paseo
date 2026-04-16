@@ -202,6 +202,11 @@ export function buildSessionConfig(
 
 export function buildExternalBridgeSessionConfig(record: StoredAgentRecord): AgentSessionConfig {
   const config = buildSessionConfig(record);
+  if (!config) {
+    throw new Error(
+      `Cannot build external bridge session config for unknown provider '${record.provider}'`,
+    );
+  }
   return {
     ...config,
     title: resolveStoredAgentTitle(record) ?? config.title,

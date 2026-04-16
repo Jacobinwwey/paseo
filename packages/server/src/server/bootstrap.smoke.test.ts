@@ -6,8 +6,11 @@ import pino from "pino";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createPaseoDaemon, parseListenString, type PaseoDaemonConfig } from "./bootstrap.js";
+import { generateLocalPairingOffer } from "./pairing-offer.js";
 import { createTestPaseoDaemon } from "./test-utils/paseo-daemon.js";
 import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
+
+const settleFilesystem = () => new Promise((resolve) => setTimeout(resolve, 250));
 
 describe("paseo daemon bootstrap", () => {
   afterEach(() => {
@@ -89,8 +92,9 @@ describe("paseo daemon bootstrap", () => {
         "Missing OpenAI credentials",
       );
     } finally {
-      await rm(paseoHomeRoot, { recursive: true, force: true });
-      await rm(staticDir, { recursive: true, force: true });
+      await settleFilesystem();
+      await rm(paseoHomeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await rm(staticDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -250,8 +254,8 @@ describe("paseo daemon bootstrap", () => {
     } finally {
       await daemon.stop().catch(() => undefined);
       await daemon.agentManager.flush().catch(() => undefined);
-      await rm(paseoHomeRoot, { recursive: true, force: true });
-      await rm(staticDir, { recursive: true, force: true });
+      await rm(paseoHomeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await rm(staticDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 });

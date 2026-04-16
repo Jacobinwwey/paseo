@@ -37,7 +37,7 @@ export const AgentSelectOptionSchema = z.object({
   label: z.string(),
   description: z.string().optional(),
   isDefault: z.boolean().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const AgentModelSchema = z.object({
@@ -46,7 +46,7 @@ export const AgentModelSchema = z.object({
   label: z.string(),
   description: z.string().optional(),
   isDefault: z.boolean().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   thinkingOptions: z.array(AgentSelectOptionSchema).optional(),
   defaultThinkingOptionId: z.string().optional(),
 });

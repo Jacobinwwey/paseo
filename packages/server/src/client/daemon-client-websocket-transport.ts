@@ -18,6 +18,7 @@ export function defaultWebSocketFactory(
 export function createWebSocketTransportFactory(factory: WebSocketFactory): DaemonTransportFactory {
   return ({ url, headers }) => {
     const ws = factory(url, { headers });
+    let openObserved = typeof ws.readyState === "number" ? ws.readyState === 1 : false;
     if ("binaryType" in ws) {
       try {
         ws.binaryType = "arraybuffer";
@@ -27,7 +28,7 @@ export function createWebSocketTransportFactory(factory: WebSocketFactory): Daem
     }
     return {
       send: (data) => {
-        if (typeof ws.readyState === "number" && ws.readyState !== 1) {
+        if (!openObserved && typeof ws.readyState === "number" && ws.readyState !== 1) {
           throw new Error(`WebSocket not open (readyState=${ws.readyState})`);
         }
         ws.send(data);
@@ -45,8 +46,16 @@ export function createWebSocketTransportFactory(factory: WebSocketFactory): Daem
           }
         }
       },
-      onOpen: (handler) => bindWsHandler(ws, "open", handler),
-      onClose: (handler) => bindWsHandler(ws, "close", handler),
+      onOpen: (handler) =>
+        bindWsHandler(ws, "open", () => {
+          openObserved = true;
+          handler();
+        }),
+      onClose: (handler) =>
+        bindWsHandler(ws, "close", (...args: any[]) => {
+          openObserved = false;
+          handler(args[0]);
+        }),
       onError: (handler) => bindWsHandler(ws, "error", handler),
       onMessage: (handler) => bindWsHandler(ws, "message", handler),
     };

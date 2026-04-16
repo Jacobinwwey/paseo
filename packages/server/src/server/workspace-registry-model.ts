@@ -200,25 +200,26 @@ export async function detectStaleWorkspaces(
 
 export async function buildProjectPlacementForCwd(input: {
   cwd: string;
-  workspaceGitService: WorkspaceGitService;
+  workspaceGitService?: WorkspaceGitService;
 }): Promise<ProjectPlacementPayload> {
   const normalizedCwd = normalizeWorkspaceId(input.cwd);
-  const checkout = await input.workspaceGitService
-    .getSnapshot(normalizedCwd)
+  const checkout = await Promise.resolve(input.workspaceGitService)
+    .then((workspaceGitService) => workspaceGitService?.getSnapshot(normalizedCwd))
+    .then((snapshot) =>
+      snapshot ? checkoutLiteFromGitSnapshot(normalizedCwd, snapshot.git) : null,
+    )
+    .catch(() => null)
     .then(
       (snapshot): ProjectCheckoutLitePayload =>
-        checkoutLiteFromGitSnapshot(normalizedCwd, snapshot.git),
-    )
-    .catch(
-      (): ProjectCheckoutLitePayload => ({
-        cwd: normalizedCwd,
-        isGit: false,
-        currentBranch: null,
-        remoteUrl: null,
-        worktreeRoot: null,
-        isPaseoOwnedWorktree: false,
-        mainRepoRoot: null,
-      }),
+        snapshot ?? {
+          cwd: normalizedCwd,
+          isGit: false,
+          currentBranch: null,
+          remoteUrl: null,
+          worktreeRoot: null,
+          isPaseoOwnedWorktree: false,
+          mainRepoRoot: null,
+        },
     );
 
   const projectKey = deriveProjectGroupingKey({

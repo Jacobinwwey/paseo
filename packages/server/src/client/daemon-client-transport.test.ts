@@ -115,6 +115,30 @@ describe("daemon-client transport helpers", () => {
     expect(ws.removeEventListener).toHaveBeenCalledWith("message", expect.any(Function));
   });
 
+  test("createWebSocketTransportFactory allows send after open event before readyState flips", () => {
+    const listeners = new Map<string, (...args: any[]) => void>();
+    const send = vi.fn();
+    const ws = {
+      readyState: 0,
+      send,
+      close: vi.fn(),
+      addEventListener: vi.fn((event: string, handler: (...args: any[]) => void) => {
+        listeners.set(event, handler);
+      }),
+      removeEventListener: vi.fn((event: string) => {
+        listeners.delete(event);
+      }),
+    };
+
+    const transport = createWebSocketTransportFactory(() => ws)({ url: "ws://example.test" });
+    transport.onOpen(() => undefined);
+
+    listeners.get("open")?.();
+
+    expect(() => transport.send("hello")).not.toThrow();
+    expect(send).toHaveBeenCalledWith("hello");
+  });
+
   test("createWebSocketTransportFactory suppresses close-before-open ws errors", () => {
     class MockNodeWebSocket extends EventEmitter {
       readyState = 0;

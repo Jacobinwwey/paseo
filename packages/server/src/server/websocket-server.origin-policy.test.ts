@@ -114,6 +114,7 @@ function createServer(allowedOrigins: Set<string> = new Set()) {
     undefined,
     undefined,
     undefined,
+    undefined,
     "1.2.3-test",
     undefined,
     undefined,

@@ -67,7 +67,6 @@ import {
   resolveStoredAgentTitle,
   toAgentPersistenceHandle,
 } from "./persistence-hooks.js";
-import { ensureAgentLoaded } from "./agent/agent-loading.js";
 import { sendPromptToAgent, unarchiveAgentState } from "./agent/mcp-shared.js";
 import { experimental_createMCPClient } from "ai";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -233,6 +232,7 @@ function clientSupportsFlexibleEditorIds(appVersion: string | null): boolean {
 }
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
+const pendingAgentInitializations = new Map<string, Promise<ManagedAgent>>();
 
 function deriveInitialAgentTitle(prompt: string): string | null {
   const firstContentLine = prompt
@@ -1195,7 +1195,12 @@ export class Session {
         throw new Error(`Agent not found: ${agentId}`);
       }
 
-      const handle = toAgentPersistenceHandle(this.sessionLogger, record.persistence);
+      const validProviders = this.agentManager.getRegisteredProviderIds();
+      const handle = toAgentPersistenceHandle(
+        this.sessionLogger,
+        validProviders,
+        record.persistence,
+      );
       let snapshot: ManagedAgent;
       const bridgedSnapshot = handle
         ? await this.resumeAgentThroughExternalBridge({
@@ -1228,7 +1233,13 @@ export class Session {
           "Agent resumed from persistence",
         );
       } else {
-        const config = buildSessionConfig(record);
+        const config = buildSessionConfig(record, {
+          validProviders,
+          logger: this.sessionLogger,
+        });
+        if (!config) {
+          throw new Error(`Agent ${agentId} references unavailable provider '${record.provider}'`);
+        }
         snapshot = await this.agentManager.createAgent(config, agentId, { labels: record.labels });
         this.sessionLogger.info(
           { agentId, provider: record.provider },
@@ -2667,11 +2678,7 @@ export class Session {
   private async enableVoiceModeForAgent(agentId: string): Promise<string> {
     const startedAt = Date.now();
     this.sessionLogger.info({ agentId }, "enableVoiceModeForAgent.ensureAgentLoaded.start");
-    const existing = await ensureAgentLoaded(agentId, {
-      agentManager: this.agentManager,
-      agentStorage: this.agentStorage,
-      logger: this.sessionLogger,
-    });
+    const existing = await this.ensureAgentLoaded(agentId);
     this.sessionLogger.info(
       { agentId, elapsedMs: Date.now() - startedAt },
       "enableVoiceModeForAgent.ensureAgentLoaded.done",
@@ -6530,11 +6537,7 @@ export class Session {
       : undefined;
 
     try {
-      const snapshot = await ensureAgentLoaded(msg.agentId, {
-        agentManager: this.agentManager,
-        agentStorage: this.agentStorage,
-        logger: this.sessionLogger,
-      });
+      const snapshot = await this.ensureAgentLoaded(msg.agentId);
       const agentPayload = await this.buildAgentPayload(snapshot);
 
       let timeline = this.agentManager.fetchTimeline(msg.agentId, {

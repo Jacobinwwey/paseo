@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { AgentPersistenceHandle, AgentSessionConfig } from "./agent/agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent/agent-manager.js";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
+import type { WorkspaceGitService } from "./workspace-git-service.js";
 import {
   createPersistedProjectRecord,
   createPersistedWorkspaceRecord,
@@ -64,6 +65,7 @@ export interface CodexProcessBridgeServiceOptions {
   agentManager: AgentManager;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
+  workspaceGitService?: WorkspaceGitService;
   runner?: CodexProcessRunner;
   scanIntervalMs?: number;
   missingScanGrace?: number;
@@ -71,10 +73,10 @@ export interface CodexProcessBridgeServiceOptions {
 
 export class CodexProcessBridgeService {
   private readonly logger: Logger;
-  private readonly paseoHome: string;
   private readonly agentManager: AgentManager;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
+  private readonly workspaceGitService: WorkspaceGitService | undefined;
   private readonly bridge: CodexProcessBridge;
   private readonly scanIntervalMs: number;
   private readonly missingScanGrace: number;
@@ -84,10 +86,10 @@ export class CodexProcessBridgeService {
 
   constructor(options: CodexProcessBridgeServiceOptions) {
     this.logger = options.logger.child({ module: "codex-process-bridge-service" });
-    this.paseoHome = options.paseoHome;
     this.agentManager = options.agentManager;
     this.projectRegistry = options.projectRegistry;
     this.workspaceRegistry = options.workspaceRegistry;
+    this.workspaceGitService = options.workspaceGitService;
     this.bridge = new CodexProcessBridge({
       logger: this.logger,
       runner: options.runner ?? createCodexProcessRunner(),
@@ -263,7 +265,7 @@ export class CodexProcessBridgeService {
     const normalizedCwd = normalizeWorkspaceId(descriptor.cwd);
     const placement = await buildProjectPlacementForCwd({
       cwd: normalizedCwd,
-      paseoHome: this.paseoHome,
+      workspaceGitService: this.workspaceGitService,
     });
     const workspaceId = deriveWorkspaceId(normalizedCwd, placement.checkout);
     const now = new Date().toISOString();

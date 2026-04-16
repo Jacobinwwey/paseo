@@ -32,6 +32,7 @@ function createSessionForExternalRecoveryTests(input: {
     subscribe: () => () => {},
     listAgents: () => [],
     getAgent: () => null,
+    getRegisteredProviderIds: () => ["claude", "codex", "copilot", "opencode", "pi"],
     archiveAgent: async () => ({ archivedAt: new Date().toISOString() }),
     clearAgentAttention: async () => {},
     notifyAgentState: () => {},

@@ -443,6 +443,7 @@ export async function createPaseoDaemon(
             agentStorage,
             projectRegistry,
             workspaceRegistry,
+            workspaceGitService,
             relaunchCommand: config.externalCodexRelaunchCommand,
           });
     if (tmuxCodexBridge) {
@@ -454,6 +455,7 @@ export async function createPaseoDaemon(
       agentManager,
       projectRegistry,
       workspaceRegistry,
+      workspaceGitService,
     });
     await codexProcessBridge.start();
     logger.info(
@@ -664,9 +666,9 @@ export async function createPaseoDaemon(
               loopService,
               scheduleService,
               checkoutDiffManager,
+              workspaceGitService,
               tmuxCodexBridge,
               codexProcessBridge,
-              workspaceGitService,
             );
 
             if (typeof process.send === "function" && process.env.PASEO_SUPERVISED === "1") {
