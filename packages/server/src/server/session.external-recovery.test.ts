@@ -32,6 +32,7 @@ function createSessionForExternalRecoveryTests(input: {
     subscribe: () => () => {},
     listAgents: () => [],
     getAgent: () => null,
+    getRegisteredProviderIds: () => ["codex"],
     archiveAgent: async () => ({ archivedAt: new Date().toISOString() }),
     clearAgentAttention: async () => {},
     notifyAgentState: () => {},
@@ -50,6 +51,63 @@ function createSessionForExternalRecoveryTests(input: {
     }),
     hydrateTimelineFromProvider: async () => {},
     ...input.agentManager,
+  };
+  const workspaceGitService = {
+    subscribe: async () => ({
+      initial: {
+        cwd: "/tmp",
+        git: {
+          isGit: false,
+          repoRoot: null,
+          mainRepoRoot: null,
+          currentBranch: null,
+          remoteUrl: null,
+          isPaseoOwnedWorktree: false,
+          isDirty: null,
+          aheadBehind: null,
+          aheadOfOrigin: null,
+          behindOfOrigin: null,
+          diffStat: null,
+        },
+        github: {
+          featuresEnabled: false,
+          pullRequest: null,
+          error: null,
+          refreshedAt: null,
+        },
+      },
+      unsubscribe: () => {},
+    }),
+    peekSnapshot: () => null,
+    getSnapshot: async (cwd: string) => ({
+      cwd,
+      git: {
+        isGit: false,
+        repoRoot: null,
+        mainRepoRoot: null,
+        currentBranch: null,
+        remoteUrl: null,
+        isPaseoOwnedWorktree: false,
+        isDirty: null,
+        aheadBehind: null,
+        aheadOfOrigin: null,
+        behindOfOrigin: null,
+        diffStat: null,
+      },
+      github: {
+        featuresEnabled: false,
+        pullRequest: null,
+        error: null,
+        refreshedAt: null,
+      },
+    }),
+    refresh: async () => {},
+    requestWorkingTreeWatch: async () => ({
+      repoRoot: null,
+      unsubscribe: () => {},
+    }),
+    scheduleRefreshForCwd: () => {},
+    dispose: () => {},
   };
 
   return new Session({
@@ -101,6 +159,7 @@ function createSessionForExternalRecoveryTests(input: {
       subscribe: () => () => {},
       scheduleRefreshForCwd: () => {},
     } as any,
+    workspaceGitService: workspaceGitService as any,
     daemonConfigStore: {
       get: () => ({}),
       onChange: () => () => {},
