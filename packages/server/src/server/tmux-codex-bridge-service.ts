@@ -6,6 +6,7 @@ import type { AgentPersistenceHandle, AgentSessionConfig } from "./agent/agent-s
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentManager, ManagedAgent } from "./agent/agent-manager.js";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
+import type { WorkspaceGitService } from "./workspace-git-service.js";
 import {
   createPersistedProjectRecord,
   createPersistedWorkspaceRecord,
@@ -158,6 +159,7 @@ export interface TmuxCodexBridgeServiceOptions {
   agentStorage?: AgentStorageLike;
   projectRegistry: ProjectRegistry;
   workspaceRegistry: WorkspaceRegistry;
+  workspaceGitService?: WorkspaceGitService;
   runner?: TmuxCodexCommandRunner;
   scanIntervalMs?: number;
   missingScanGrace?: number;
@@ -176,11 +178,11 @@ function normalizeRelaunchCommand(command?: string[]): string[] {
 
 export class TmuxCodexBridgeService {
   private readonly logger: Logger;
-  private readonly paseoHome: string;
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorageLike | null;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
+  private readonly workspaceGitService: WorkspaceGitService | undefined;
   private readonly runner: TmuxCodexCommandRunner;
   private readonly discoveryBridge: TmuxCodexBridge;
   private readonly scanIntervalMs: number;
@@ -193,11 +195,11 @@ export class TmuxCodexBridgeService {
 
   constructor(options: TmuxCodexBridgeServiceOptions) {
     this.logger = options.logger.child({ module: "tmux-codex-bridge-service" });
-    this.paseoHome = options.paseoHome;
     this.agentManager = options.agentManager;
     this.agentStorage = options.agentStorage ?? null;
     this.projectRegistry = options.projectRegistry;
     this.workspaceRegistry = options.workspaceRegistry;
+    this.workspaceGitService = options.workspaceGitService;
     this.runner = options.runner ?? createTmuxCodexCommandRunner();
     this.discoveryBridge = new TmuxCodexBridge({
       logger: this.logger,
@@ -797,7 +799,7 @@ export class TmuxCodexBridgeService {
     const normalizedCwd = normalizeWorkspaceId(snapshot.cwd);
     const placement = await buildProjectPlacementForCwd({
       cwd: normalizedCwd,
-      paseoHome: this.paseoHome,
+      workspaceGitService: this.workspaceGitService,
     });
     const workspaceId = deriveWorkspaceId(normalizedCwd, placement.checkout);
     const now = new Date().toISOString();
