@@ -59,6 +59,7 @@ import {
 } from "@/utils/host-routes";
 import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { isWeb } from "@/constants/platform";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 
 const MIN_CHAT_WIDTH = 400;
 
@@ -124,6 +125,7 @@ export const LeftSidebar = memo(function LeftSidebar({
   const closeToAgent = usePanelStore((state) => state.closeToAgent);
   const pathname = usePathname();
   const daemons = useHosts();
+  const preferredServerId = usePreferredHostServerId(daemons);
   const activeServerIdFromPath = useMemo(() => parseServerIdFromPathname(pathname), [pathname]);
   const activeDaemon = useMemo(() => {
     if (daemons.length === 0) {
@@ -135,8 +137,14 @@ export const LeftSidebar = memo(function LeftSidebar({
         return routeMatch;
       }
     }
+    if (preferredServerId) {
+      const preferred = daemons.find((entry) => entry.serverId === preferredServerId);
+      if (preferred) {
+        return preferred;
+      }
+    }
     return daemons[0] ?? null;
-  }, [activeServerIdFromPath, daemons]);
+  }, [activeServerIdFromPath, daemons, preferredServerId]);
   const activeServerId = activeDaemon?.serverId ?? null;
   const activeHostLabel = useMemo(() => {
     if (!activeDaemon) return "No host";

@@ -20,6 +20,7 @@ import { getShortcutOs } from "@/utils/shortcut-platform";
 import { getIsElectronRuntime } from "@/constants/layout";
 import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
 import { focusWithRetries } from "@/utils/web-focus";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 
 const EMPTY_AGENTS: AggregatedAgent[] = [];
 const EMPTY_ACTION_ITEMS: CommandCenterActionItem[] = [];
@@ -135,6 +136,7 @@ export function useCommandCenter() {
   const handleSelectItemRef = useRef<(item: CommandCenterItem) => void>(() => undefined);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const preferredServerId = usePreferredHostServerId(daemons);
 
   const activeServerId = useMemo(() => {
     if (!open) {
@@ -147,8 +149,8 @@ export function useCommandCenter() {
         return routeMatch.serverId;
       }
     }
-    return daemons[0]?.serverId ?? null;
-  }, [daemons, open, pathname]);
+    return preferredServerId;
+  }, [daemons, open, pathname, preferredServerId]);
 
   const { agents } = useAllAgentsList({
     serverId: activeServerId,

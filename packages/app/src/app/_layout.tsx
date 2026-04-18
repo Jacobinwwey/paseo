@@ -80,6 +80,7 @@ import {
   parseHostAgentRouteFromPathname,
   parseWorkspaceOpenIntent,
 } from "@/utils/host-routes";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 import { syncNavigationActiveWorkspace } from "@/stores/navigation-active-workspace-store";
 import { isWeb, isNative } from "@/constants/platform";
 
@@ -664,7 +665,7 @@ interface OpenProjectEventPayload {
 
 function OpenProjectListener() {
   const hosts = useHosts();
-  const serverId = hosts[0]?.serverId ?? null;
+  const serverId = usePreferredHostServerId(hosts);
   const client = useHostRuntimeClient(serverId ?? "");
   const openProject = useOpenProject(serverId);
   const pendingPathRef = useRef<string | null>(null);
@@ -741,18 +742,19 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ open?: string | string[] }>();
   const hosts = useHosts();
+  const preferredServerId = usePreferredHostServerId(hosts);
   const activeServerId = useMemo(() => parseServerIdFromPathname(pathname), [pathname]);
   const shouldShowAppChrome = activeServerId !== null;
 
   useEffect(() => {
-    if (!activeServerId || hosts.length === 0) {
+    if (!activeServerId || hosts.length === 0 || !preferredServerId) {
       return;
     }
     if (hosts.some((host) => host.serverId === activeServerId)) {
       return;
     }
-    router.replace(mapPathnameToServer(pathname, hosts[0]!.serverId));
-  }, [activeServerId, hosts, pathname, router]);
+    router.replace(mapPathnameToServer(pathname, preferredServerId));
+  }, [activeServerId, hosts, pathname, preferredServerId, router]);
 
   // Parse selectedAgentKey directly from pathname
   // useLocalSearchParams doesn't update when navigating between same-pattern routes

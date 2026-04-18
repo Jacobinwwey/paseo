@@ -1,36 +1,12 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "expo-router";
 import { StartupSplashScreen } from "@/screens/startup-splash-screen";
 import { useHostRuntimeBootstrapState, useStoreReady } from "@/app/_layout";
-import { getHostRuntimeStore, isHostRuntimeConnected, useHosts } from "@/runtime/host-runtime";
+import { useHosts } from "@/runtime/host-runtime";
 import { buildHostRootRoute } from "@/utils/host-routes";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 
 const WELCOME_ROUTE = "/welcome";
-
-function useAnyOnlineHostServerId(serverIds: string[]): string | null {
-  const runtime = getHostRuntimeStore();
-
-  return useSyncExternalStore(
-    (onStoreChange) => runtime.subscribeAll(onStoreChange),
-    () => {
-      let firstOnlineServerId: string | null = null;
-      let firstOnlineAt: string | null = null;
-      for (const serverId of serverIds) {
-        const snapshot = runtime.getSnapshot(serverId);
-        const lastOnlineAt = snapshot?.lastOnlineAt ?? null;
-        if (!isHostRuntimeConnected(snapshot) || !lastOnlineAt) {
-          continue;
-        }
-        if (!firstOnlineAt || lastOnlineAt < firstOnlineAt) {
-          firstOnlineAt = lastOnlineAt;
-          firstOnlineServerId = serverId;
-        }
-      }
-      return firstOnlineServerId;
-    },
-    () => null,
-  );
-}
 
 export default function Index() {
   const router = useRouter();
@@ -38,7 +14,7 @@ export default function Index() {
   const bootstrapState = useHostRuntimeBootstrapState();
   const storeReady = useStoreReady();
   const hosts = useHosts();
-  const anyOnlineServerId = useAnyOnlineHostServerId(hosts.map((host) => host.serverId));
+  const preferredServerId = usePreferredHostServerId(hosts);
 
   useEffect(() => {
     if (!storeReady) {
@@ -48,9 +24,9 @@ export default function Index() {
       return;
     }
 
-    const targetRoute = anyOnlineServerId ? buildHostRootRoute(anyOnlineServerId) : WELCOME_ROUTE;
+    const targetRoute = preferredServerId ? buildHostRootRoute(preferredServerId) : WELCOME_ROUTE;
     router.replace(targetRoute);
-  }, [anyOnlineServerId, pathname, router, storeReady]);
+  }, [pathname, preferredServerId, router, storeReady]);
 
   return <StartupSplashScreen bootstrapState={bootstrapState} />;
 }

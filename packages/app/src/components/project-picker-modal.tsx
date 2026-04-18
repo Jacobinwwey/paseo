@@ -10,6 +10,7 @@ import { useSessionStore } from "@/stores/session-store";
 import { useHosts, useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useOpenProject } from "@/hooks/use-open-project";
 import { parseServerIdFromPathname } from "@/utils/host-routes";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 import { buildWorkingDirectorySuggestions } from "@/utils/working-directory-suggestions";
 import { isNative } from "@/constants/platform";
 
@@ -17,6 +18,7 @@ export function ProjectPickerModal() {
   const { theme } = useUnistyles();
   const pathname = usePathname();
   const daemons = useHosts();
+  const preferredServerId = usePreferredHostServerId(daemons);
 
   const open = useKeyboardShortcutsStore((s) => s.projectPickerOpen);
   const setOpen = useKeyboardShortcutsStore((s) => s.setProjectPickerOpen);
@@ -24,8 +26,8 @@ export function ProjectPickerModal() {
   const serverId = useMemo(() => {
     const fromPath = parseServerIdFromPathname(pathname);
     if (fromPath) return fromPath;
-    return daemons[0]?.serverId ?? null;
-  }, [pathname, daemons]);
+    return preferredServerId;
+  }, [pathname, preferredServerId]);
 
   const client = useHostRuntimeClient(serverId ?? "");
   const isConnected = useHostRuntimeIsConnected(serverId ?? "");

@@ -28,6 +28,7 @@ import { useOpenProjectPicker } from "@/hooks/use-open-project-picker";
 import { useKeyboardShortcutOverrides } from "@/hooks/use-keyboard-shortcut-overrides";
 import { isNative } from "@/constants/platform";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
+import { usePreferredHostServerId } from "@/utils/preferred-host";
 
 export function useKeyboardShortcuts({
   enabled,
@@ -51,6 +52,7 @@ export function useKeyboardShortcuts({
   const pathname = usePathname();
   const router = useRouter();
   const hosts = useHosts();
+  const preferredServerId = usePreferredHostServerId(hosts);
   const resetModifiers = useKeyboardShortcutsStore((s) => s.resetModifiers);
   const { overrides } = useKeyboardShortcutOverrides();
   const bindings = useMemo(() => buildEffectiveBindings(overrides), [overrides]);
@@ -62,7 +64,7 @@ export function useKeyboardShortcuts({
   const activeServerIdFromPath = parseServerIdFromPathname(pathname);
   const activeServerId =
     hosts.find((host) => host.serverId === activeServerIdFromPath)?.serverId ??
-    hosts[0]?.serverId ??
+    preferredServerId ??
     null;
   const openProjectPickerAction = useOpenProjectPicker(activeServerId);
 
