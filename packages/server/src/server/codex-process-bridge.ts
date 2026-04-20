@@ -1,4 +1,4 @@
-import { readlink } from "node:fs/promises";
+import { readdir, readlink } from "node:fs/promises";
 import { basename } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -13,6 +13,8 @@ const execFileAsync = promisify(execFile);
 const CODEX_PROCESS_AGENT_NAMESPACE = "5310b8dd-2603-47c7-97ef-a59e51b59871";
 const CODEX_PROCESS_SOURCE = "codex_process";
 const MAX_CAPTURE_BYTES = "262144";
+const ROLLOUT_SESSION_ID_PATTERN =
+  /\/rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 
 export interface UnixProcessWithTty {
   pid: number;
@@ -24,6 +26,7 @@ export interface UnixProcessWithTty {
 export interface CodexProcessDescriptor {
   agentId: string;
   tty: string;
+  processTty: string;
   cwd: string;
   leaderPid: number;
   sessionId: string | null;
@@ -113,6 +116,7 @@ function isDeletedCwd(cwd: string): boolean {
 export async function discoverCodexProcessDescriptors(input: {
   processes: UnixProcessWithTty[];
   resolveCwd: (pid: number) => Promise<string>;
+  resolveSessionId?: (pid: number) => Promise<string | null>;
 }): Promise<CodexProcessDescriptor[]> {
   const processByPid = new Map(input.processes.map((process) => [process.pid, process]));
   const codexProcesses = input.processes.filter(
@@ -130,8 +134,10 @@ export async function discoverCodexProcessDescriptors(input: {
 
   const descriptors: CodexProcessDescriptor[] = [];
   for (const process of chosenByTty.values()) {
-    const tty = process.tty!;
-    const sessionId = extractSessionId(process.args);
+    const processTty = process.tty!;
+    const explicitSessionId = extractSessionId(process.args);
+    const sessionId =
+      explicitSessionId ?? (input.resolveSessionId ? await input.resolveSessionId(process.pid) : null);
     let cwd: string;
     try {
       cwd = await input.resolveCwd(process.pid);
@@ -142,14 +148,13 @@ export async function discoverCodexProcessDescriptors(input: {
       continue;
     }
     const scriptAncestor = findCodexScriptAncestor({ process, processByPid });
-    if (scriptAncestor?.process.tty && scriptAncestor.process.tty !== tty) {
-      continue;
-    }
+    const tty = scriptAncestor?.process.tty ?? processTty;
     const logPath = scriptAncestor?.logPath ?? null;
     const title = `${basename(cwd)} [${tty.replace("/dev/", "")}]`;
     const metadata = {
       externalSessionSource: CODEX_PROCESS_SOURCE,
       tty,
+      processTty,
       cwd,
       leaderPid: process.pid,
       processArgs: process.args,
@@ -158,8 +163,9 @@ export async function discoverCodexProcessDescriptors(input: {
     };
 
     descriptors.push({
-      agentId: buildAgentId({ tty, sessionId, leaderPid: process.pid }),
+      agentId: buildAgentId({ tty, sessionId: explicitSessionId, leaderPid: process.pid }),
       tty,
+      processTty,
       cwd,
       leaderPid: process.pid,
       sessionId,
@@ -189,6 +195,30 @@ export async function discoverCodexProcessDescriptors(input: {
   return descriptors;
 }
 
+async function inferCodexRolloutSessionId(pid: number): Promise<string | null> {
+  let fds: string[];
+  try {
+    fds = await readdir(`/proc/${pid}/fd`);
+  } catch {
+    return null;
+  }
+
+  for (const fd of fds) {
+    let target: string;
+    try {
+      target = await readlink(`/proc/${pid}/fd/${fd}`);
+    } catch {
+      continue;
+    }
+    const match = target.match(ROLLOUT_SESSION_ID_PATTERN);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
 export function isCodexProcessHandle(handle: AgentPersistenceHandle | null | undefined): boolean {
   return handle?.metadata?.externalSessionSource === CODEX_PROCESS_SOURCE;
 }
@@ -202,8 +232,25 @@ export function createCodexProcessRunner(): CodexProcessRunner {
   };
 }
 
+const TRANSIENT_CODEX_CAPTURE_LINE_PATTERNS = [
+  /esc to interrupt/i,
+  /background terminals running/i,
+  /queued follow-up messages/i,
+  /edit last queued message/i,
+];
+
 export function sanitizeCodexProcessCapture(text: string): string {
-  return stripAnsi(text).replace(/\r\n/g, "\n");
+  const normalized = stripAnsi(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const filtered = normalized
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(
+      (line) =>
+        !TRANSIENT_CODEX_CAPTURE_LINE_PATTERNS.some((pattern) => pattern.test(line)),
+    )
+    .join("\n");
+
+  return filtered.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export class CodexProcessBridge {
@@ -221,6 +268,7 @@ export class CodexProcessBridge {
       return await discoverCodexProcessDescriptors({
         processes: parseUnixProcessTableWithTty(processRaw),
         resolveCwd: async (pid) => readlink(`/proc/${pid}/cwd`),
+        resolveSessionId: inferCodexRolloutSessionId,
       });
     } catch (error) {
       this.logger.warn({ err: error }, "Failed to discover codex processes");

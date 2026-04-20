@@ -46,7 +46,7 @@ describe("codex process bridge discovery", () => {
     expect(logPath).toBe("/tmp/codex-429-retry.cS8GBi.log");
   });
 
-  it("skips pseudo-tty codex children that belong to a wrapper on another tty", async () => {
+  it("uses wrapper tty for pseudo-tty codex children launched through script", async () => {
     const processes = parseUnixProcessTableWithTty(
       [
         "282241 1007934 pts/15 bash /usr/local/bin/codex-root-wrapper",
@@ -61,7 +61,54 @@ describe("codex process bridge discovery", () => {
       resolveCwd: async () => "/workspace/project",
     });
 
-    expect(descriptors).toHaveLength(0);
+    expect(descriptors).toHaveLength(1);
+    expect(descriptors[0]).toMatchObject({
+      tty: "/dev/pts/15",
+      processTty: "/dev/pts/23",
+      sessionId: null,
+      logPath: "/tmp/codex-429-retry.glX6HS.log",
+      cwd: "/workspace/project",
+      title: "project [pts/15]",
+    });
+  });
+
+  it("recovers rollout session id from open files without changing no-resume agent identity", async () => {
+    const processes = parseUnixProcessTableWithTty(
+      [
+        "1040376 3081867 pts/13 bash /usr/local/bin/codex-root-wrapper",
+        "1040380 1040376 pts/13 script -qefc /usr/local/bin/codex /tmp/codex-429-retry.yqPEH7.log",
+        "1040381 1040380 pts/8 node /usr/local/bin/codex",
+        "1040388 1040381 pts/8 /opt/codex/codex",
+      ].join("\n"),
+    );
+
+    const withoutRecoveredSession = await discoverCodexProcessDescriptors({
+      processes,
+      resolveCwd: async () => "/home/jacob",
+    });
+    const withRecoveredSession = await discoverCodexProcessDescriptors({
+      processes,
+      resolveCwd: async () => "/home/jacob",
+      resolveSessionId: async (pid) =>
+        pid === 1040388 ? "019d970a-50d2-7100-b25c-60755836d1d1" : null,
+    });
+
+    expect(withoutRecoveredSession).toHaveLength(1);
+    expect(withRecoveredSession).toHaveLength(1);
+    expect(withRecoveredSession[0]?.agentId).toBe(withoutRecoveredSession[0]?.agentId);
+    expect(withRecoveredSession[0]).toMatchObject({
+      tty: "/dev/pts/13",
+      processTty: "/dev/pts/8",
+      sessionId: "019d970a-50d2-7100-b25c-60755836d1d1",
+      logPath: "/tmp/codex-429-retry.yqPEH7.log",
+      title: "jacob [pts/13]",
+      persistenceHandle: {
+        sessionId: "019d970a-50d2-7100-b25c-60755836d1d1",
+        metadata: {
+          sessionId: "019d970a-50d2-7100-b25c-60755836d1d1",
+        },
+      },
+    });
   });
 
   it("discovers codex sessions by tty", async () => {
@@ -81,6 +128,7 @@ describe("codex process bridge discovery", () => {
     expect(descriptors).toHaveLength(2);
     expect(descriptors[0]).toMatchObject({
       tty: "/dev/pts/14",
+      processTty: "/dev/pts/14",
       sessionId: "019d6145-173e-74a0-88bc-e34f12bd3941",
       logPath: null,
       cwd: "/workspace/repo-b",
@@ -140,5 +188,20 @@ describe("codex process bridge discovery", () => {
   it("strips ansi escapes from captured codex output", () => {
     const raw = "\u001b[19;27H\u001b[0mhello\r\n\u001b[31mworld\u001b[0m";
     expect(sanitizeCodexProcessCapture(raw)).toBe("hello\nworld");
+  });
+
+  it("drops transient codex working-status lines from captured output", () => {
+    const raw = [
+      "Reply only PASEO_OK_360",
+      "Working (2s • esc to interrupt)Working (3s • esc to interrupt)",
+      "PASEO_OK_360",
+    ].join("\r\n");
+
+    expect(sanitizeCodexProcessCapture(raw)).toBe("Reply only PASEO_OK_360\nPASEO_OK_360");
+  });
+
+  it("keeps ordinary lines that merely use the word working", () => {
+    const raw = "Working notes stay visible\r\nResult";
+    expect(sanitizeCodexProcessCapture(raw)).toBe("Working notes stay visible\nResult");
   });
 });
