@@ -63,6 +63,9 @@ function createBaseInput(): AgentScreenMachineInput {
     isArchivingCurrentAgent: false,
     isHistorySyncing: false,
     needsAuthoritativeSync: false,
+    deferAuthoritativeSync: false,
+    shouldUseOptimisticStream: false,
+
     hasHydratedHistoryBefore: false,
   };
 }
@@ -345,6 +348,24 @@ describe("deriveAgentScreenViewState", () => {
     expect(ready.source).toBe("optimistic");
     expect(ready.agent.status).toBe("running");
     expect(ready.sync).toEqual({ status: "catching_up", ui: "silent" });
+  });
+
+  it("keeps recoverable closed sessions interactive while authoritative sync is deferred", () => {
+    const memory = createBaseMemory();
+    const input: AgentScreenMachineInput = {
+      ...createBaseInput(),
+      agent: createAgentWithStatus({ id: "agent-1", status: "closed" }),
+      needsAuthoritativeSync: true,
+      deferAuthoritativeSync: true,
+      hasHydratedHistoryBefore: false,
+    };
+
+    const result = deriveAgentScreenViewState({ input, memory });
+    const ready = expectReadyState(result.state);
+
+    expect(ready.source).toBe("authoritative");
+    expect(ready.agent.status).toBe("closed");
+    expect(ready.sync.status).toBe("idle");
   });
 
   it("keeps optimistic flow non-blocking while transitioning to authoritative stream", () => {

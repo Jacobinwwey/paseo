@@ -893,6 +893,25 @@ export const FetchAgentsRequestMessageSchema = z.object({
     .optional(),
 });
 
+export const FetchRecoverableAgentsRequestMessageSchema = z.object({
+  type: z.literal("fetch_recoverable_agents_request"),
+  requestId: z.string(),
+  sort: z
+    .array(
+      z.object({
+        key: z.enum(["status_priority", "created_at", "updated_at", "title"]),
+        direction: z.enum(["asc", "desc"]),
+      }),
+    )
+    .optional(),
+  page: z
+    .object({
+      limit: z.number().int().positive().max(200),
+      cursor: z.string().min(1).optional(),
+    })
+    .optional(),
+});
+
 const WorkspaceStateBucketSchema = z.enum([
   "needs_input",
   "failed",
@@ -1840,7 +1859,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AudioPlayedMessageSchema,
   FetchAgentsRequestMessageSchema,
   FetchAgentHistoryRequestMessageSchema,
+<<<<<<< ours
   FetchRecentProviderSessionsRequestMessageSchema,
+=======
+  FetchRecoverableAgentsRequestMessageSchema,
+>>>>>>> theirs
   FetchWorkspacesRequestMessageSchema,
   FetchAgentRequestMessageSchema,
   DeleteAgentRequestMessageSchema,
@@ -2467,12 +2490,26 @@ export const FetchAgentHistoryResponseMessageSchema = z.object({
   }),
 });
 
+<<<<<<< ours
 export const FetchRecentProviderSessionsResponseMessageSchema = z.object({
   type: z.literal("fetch_recent_provider_sessions_response"),
   payload: z.object({
     requestId: z.string(),
     entries: z.array(RecentProviderSessionDescriptorPayloadSchema),
     filteredAlreadyImportedCount: z.number().int().nonnegative().optional(),
+=======
+export const FetchRecoverableAgentsResponseMessageSchema = z.object({
+  type: z.literal("fetch_recoverable_agents_response"),
+  payload: z.object({
+    requestId: z.string(),
+    entries: z.array(
+      z.object({
+        agent: AgentSnapshotPayloadSchema,
+        project: ProjectPlacementPayloadSchema,
+      }),
+    ),
+    pageInfo: AgentDirectoryPageInfoSchema,
+>>>>>>> theirs
   }),
 });
 
@@ -3630,7 +3667,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentStatusMessageSchema,
   FetchAgentsResponseMessageSchema,
   FetchAgentHistoryResponseMessageSchema,
+<<<<<<< ours
   FetchRecentProviderSessionsResponseMessageSchema,
+=======
+  FetchRecoverableAgentsResponseMessageSchema,
+>>>>>>> theirs
   FetchWorkspacesResponseMessageSchema,
   OpenProjectResponseMessageSchema,
   StartWorkspaceScriptResponseMessageSchema,
@@ -3768,8 +3809,13 @@ export type FetchAgentsResponseMessage = z.infer<typeof FetchAgentsResponseMessa
 export type FetchAgentHistoryResponseMessage = z.infer<
   typeof FetchAgentHistoryResponseMessageSchema
 >;
+<<<<<<< ours
 export type FetchRecentProviderSessionsResponseMessage = z.infer<
   typeof FetchRecentProviderSessionsResponseMessageSchema
+=======
+export type FetchRecoverableAgentsResponseMessage = z.infer<
+  typeof FetchRecoverableAgentsResponseMessageSchema
+>>>>>>> theirs
 >;
 export type FetchWorkspacesResponseMessage = z.infer<typeof FetchWorkspacesResponseMessageSchema>;
 export type ScriptStatusUpdateMessage = z.infer<typeof ScriptStatusUpdateMessageSchema>;
@@ -3852,8 +3898,13 @@ export type ActivityLogPayload = z.infer<typeof ActivityLogPayloadSchema>;
 export type VoiceAudioChunkMessage = z.infer<typeof VoiceAudioChunkMessageSchema>;
 export type FetchAgentsRequestMessage = z.infer<typeof FetchAgentsRequestMessageSchema>;
 export type FetchAgentHistoryRequestMessage = z.infer<typeof FetchAgentHistoryRequestMessageSchema>;
+<<<<<<< ours
 export type FetchRecentProviderSessionsRequestMessage = z.infer<
   typeof FetchRecentProviderSessionsRequestMessageSchema
+=======
+export type FetchRecoverableAgentsRequestMessage = z.infer<
+  typeof FetchRecoverableAgentsRequestMessageSchema
+>>>>>>> theirs
 >;
 export type FetchWorkspacesRequestMessage = z.infer<typeof FetchWorkspacesRequestMessageSchema>;
 export type FetchAgentRequestMessage = z.infer<typeof FetchAgentRequestMessageSchema>;

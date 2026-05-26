@@ -35,6 +35,8 @@ interface BuildWorkspaceTabMenuEntriesInput {
   index: number;
   tabCount: number;
   menuTestIDBase: string;
+  reloadAgentLabel?: string;
+  reloadAgentTooltip?: string;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
@@ -49,6 +51,8 @@ interface BuildWorkspaceDesktopTabActionsInput {
   tab: WorkspaceTabDescriptor;
   index: number;
   tabCount: number;
+  reloadAgentLabel?: string;
+  reloadAgentTooltip?: string;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
@@ -109,6 +113,8 @@ export function buildWorkspaceTabMenuEntries(
     index,
     tabCount,
     menuTestIDBase,
+    reloadAgentLabel,
+    reloadAgentTooltip,
     onCopyResumeCommand,
     onCopyAgentId,
     onReloadAgent,
@@ -203,9 +209,9 @@ export function buildWorkspaceTabMenuEntries(
     entries.push({
       kind: "item",
       key: "reload-agent",
-      label: "Reload agent",
+      label: reloadAgentLabel ?? "Reload agent",
       icon: "rotate-cw",
-      tooltip: "Reload agent to update skills, MCPs or login status.",
+      tooltip: reloadAgentTooltip ?? "Reload agent to update skills, MCPs or login status.",
       testID: `${menuTestIDBase}-reload-agent`,
       onSelect: () => {
         void onReloadAgent(agentId);
@@ -238,6 +244,8 @@ export function buildWorkspaceDesktopTabActions(
       index: input.index,
       tabCount: input.tabCount,
       menuTestIDBase: contextMenuTestId,
+      reloadAgentLabel: input.reloadAgentLabel,
+      reloadAgentTooltip: input.reloadAgentTooltip,
       onCopyResumeCommand: input.onCopyResumeCommand,
       onCopyAgentId: input.onCopyAgentId,
       onReloadAgent: input.onReloadAgent,
